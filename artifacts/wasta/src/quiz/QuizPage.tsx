@@ -4,7 +4,7 @@ import { demoCatalog, demoOrder, initialSpec } from "./demo";
 import PieceStep, { GenerationPanel } from "./PieceStep";
 import { useFurnitureGeneration } from "./useFurnitureGeneration";
 import Furniture3D from "../buyer/Furniture3D";
-import { EstimateCard, EstimatePreview } from "./EstimateCard";
+import { EstimateCard, EstimatePreview, usePaymentsConnected } from "./EstimateCard";
 import type { FurnitureEstimate } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import type { CatalogItem, Language, Spec } from "./types";
@@ -43,6 +43,7 @@ export default function QuizPage() {
   const [copied, setCopied] = useState(false);
   const submitting = useRef(false);
   const generation = useFurnitureGeneration();
+  const paymentsConnected = usePaymentsConnected();
   const patch = (values: Partial<Spec>) => setSpec(old => ({ ...old, ...values }));
   const heading = useRef<HTMLHeadingElement>(null);
   const steps = [
@@ -143,7 +144,9 @@ export default function QuizPage() {
         <h1 ref={heading} tabIndex={-1}>{t("احتفظ برابط طلبك", "Keep your private order link")}</h1>
         <p>{t("راجع التصميم والسعر وتابع التصنيع من هذا الرابط دون إنشاء حساب. لا تشاركه إلا مع من تثق به.", "Review the design and quote and follow production without an account. Share this private link only with people you trust.")}</p>
         {success.estimate && <EstimateCard estimate={success.estimate} lang={lang} saved />}
-        <p className="wb-notice">{t("طلبك ينتظر مراجعة الورشة. ربط Paymob قيد الانتظار، ولا يوجد أي مبلغ محصّل أو مستحق الدفع الآن.", "Your request is awaiting workshop review. Paymob setup is pending; no money was collected or is payable now.")}</p>
+        <p className="wb-notice">{paymentsConnected
+          ? t("طلبك ينتظر مراجعة الورشة. لا يوجد أي مبلغ مستحق الآن، وستدفع العربون عبر Paymob من رابط طلبك بعد أن ترسل الورشة عرض السعر.", "Your request is awaiting workshop review. Nothing is payable yet; you'll pay the deposit through Paymob from your order link once the workshop sends a quote.")
+          : t("طلبك ينتظر مراجعة الورشة. ربط Paymob قيد الانتظار، ولا يوجد أي مبلغ محصّل أو مستحق الدفع الآن.", "Your request is awaiting workshop review. Paymob setup is pending; no money was collected or is payable now.")}</p>
         <a className="wb-link wb-primary" href={magicLink}>{t("افتح طلبك", "Open your order")}</a>
         <label>{t("رابط الطلب الخاص", "Private order link")}<input readOnly value={magicLink} dir="ltr" onFocus={e => e.target.select()} /></label>
         <button onClick={() => navigator.clipboard.writeText(magicLink).then(() => setCopied(true)).catch(() => setError(t("انسخ الرابط من الحقل أعلاه.", "Copy the link from the field above.")))}>{copied ? t("تم النسخ", "Copied") : t("نسخ الرابط", "Copy link")}</button>

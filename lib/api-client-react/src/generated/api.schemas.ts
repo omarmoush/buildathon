@@ -145,6 +145,9 @@ export interface OrderReview {
 
 export interface HealthStatus {
   status: string;
+  database?: string;
+  /** `paymob-test` or `paymob-live` when Paymob is configured, otherwise `unavailable` */
+  payments?: string;
 }
 
 export interface Error {

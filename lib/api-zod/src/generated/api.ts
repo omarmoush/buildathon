@@ -277,7 +277,9 @@ export const SaveOrderEstimateResponse = zod.object({
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
-  "status": zod.string()
+  "status": zod.string(),
+  "database": zod.string().optional(),
+  "payments": zod.string().optional().describe('`paymob-test` or `paymob-live` when Paymob is configured, otherwise `unavailable`')
 })
 
 
