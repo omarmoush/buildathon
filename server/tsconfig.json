@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "esModuleInterop": true,
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "../shared/contract.ts"],
+  "exclude": ["dist"]
+}

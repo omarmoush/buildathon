@@ -15,6 +15,8 @@ import {
   useSubmitDesign, useUploadImage,
 } from '@workspace/api-client-react';
 import type { Currency, Order, OrderInput, OrderStatus, PaymentInputMethod } from '@workspace/api-client-react';
+import type { OrderStatus as ContractOrderStatus } from '../../../shared/contract';
+import { formatDepositPercent } from '@/lib/quote-format';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -26,18 +28,20 @@ import { DEFAULT_TARGET_MARGIN, DEMO_USD_RATE, needsAttention, quotePreview, quo
 type Language = 'ar' | 'en';
 const LanguageContext = createContext<{ lang: Language; setLang: (lang: Language) => void }>({ lang: 'ar', setLang: () => undefined });
 const useLanguage = () => useContext(LanguageContext);
-const t = (en: string, ar: string) => {
+const useTranslation = () => {
   const { lang } = useLanguage();
-  return lang === 'ar' ? ar : en;
+  // Subscribe once per component; translating text must never call a hook.
+  return (en: string, ar: string) => lang === 'ar' ? ar : en;
 };
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
-const statusNames: Record<OrderStatus, [string, string]> = {
-  draft: ['Draft', 'مسودة'], design_review: ['Design review', 'مراجعة التصميم'], quoted: ['Quote sent', 'تم إرسال السعر'],
+// Keep the legacy client's draft label while accepting the shared wire contract.
+const statusNames: Record<OrderStatus | ContractOrderStatus, [string, string]> = {
+  requested: ['Requested', 'طلب جديد'], draft: ['Draft', 'مسودة'], design_review: ['Design review', 'مراجعة التصميم'], quoted: ['Quote sent', 'تم إرسال السعر'],
   deposit_paid: ['Deposit paid', 'تم دفع العربون'], in_production: ['In production', 'قيد التصنيع'],
   ready: ['Ready for delivery', 'جاهز للتسليم'], delivered: ['Delivered', 'تم التسليم'], closed: ['Complete', 'مكتمل'],
   cancelled: ['Cancelled', 'ملغي'], expired: ['Expired', 'منتهي'],
 };
-const stageIndex: Record<string, number> = { draft: 0, design_review: 0, quoted: 1, deposit_paid: 2, in_production: 2, ready: 3, delivered: 4, closed: 4 };
+const stageIndex: Record<string, number> = { requested: 0, draft: 0, design_review: 0, quoted: 1, deposit_paid: 2, in_production: 2, ready: 3, delivered: 4, closed: 4 };
 const statusTone = (s: OrderStatus) => ['deposit_paid', 'in_production', 'closed'].includes(s) ? 'status-green' : ['design_review', 'quoted', 'ready'].includes(s) ? 'status-orange' : ['cancelled', 'expired'].includes(s) ? 'status-red' : 'status-gray';
 const money = (value?: number, currency = 'EGP') => `${new Intl.NumberFormat('en-US', { minimumFractionDigits: currency === 'EGP' ? 0 : 2, maximumFractionDigits: currency === 'EGP' ? 0 : 2 }).format(value || 0)} ${currency}`;
 const dateShort = (value: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
@@ -55,6 +59,7 @@ const whatsappHref = (phone: string, message: string, country = 'Egypt') => {
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 };
 const whatsappStatusMessage: Record<string, string> = {
+  requested: 'تم إنشاء طلبك.',
   draft: 'تم إنشاء طلبك.',
   design_review: 'التصميم جاهز للمراجعة.',
   quoted: 'عرض السعر جاهز.',
@@ -99,6 +104,7 @@ function AppFrame({ children, className = '' }: { children: ReactNode; className
   return <main dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang} className={`app-shell grain ${className}`}>{children}</main>;
 }
 function Header({ ownerName, onLogout, showNotifications = false }: { ownerName?: string; onLogout?: () => void; showNotifications?: boolean }) {
+  const t = useTranslation();
   return <header className="flex items-center justify-between gap-4 border-b border-border bg-background/85 px-5 py-4 backdrop-blur md:px-10">
     <Link href="/" className="text-foreground no-underline"><Logo small /></Link>
     <div className="flex items-center gap-2">
@@ -110,6 +116,7 @@ function Header({ ownerName, onLogout, showNotifications = false }: { ownerName?
   </header>;
 }
 function OwnerNotificationMenu() {
+  const t = useTranslation();
   const notifications = useListNotifications();
   const [open, setOpen] = useState(false);
   const items = notifications.data || [];
@@ -127,6 +134,7 @@ function LoadingScreen() {
   return <AppFrame><div className="mx-auto max-w-5xl p-6 md:p-10"><div className="skeleton mb-8 h-10 w-52" /><div className="grid gap-4 md:grid-cols-3"><div className="skeleton h-32" /><div className="skeleton h-32" /><div className="skeleton h-32" /></div><div className="skeleton mt-8 h-64" /></div></AppFrame>;
 }
 function Problem({ onRetry, message }: { onRetry: () => void; message?: string }) {
+  const t = useTranslation();
   return <div className="surface mx-auto my-8 max-w-xl p-8 text-center"><div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-secondary text-primary"><ShieldCheck size={23} /></div><h2 className="font-display text-xl font-bold">{t('Something did not load', 'لم يتم تحميل البيانات')}</h2><p className="mt-2 text-sm text-muted-foreground">{message || t('Check your connection, then try again.', 'تحقق من الاتصال ثم أعد المحاولة.')}</p><Button className="btn-primary mt-5" onClick={onRetry}>{t('Try again', 'إعادة المحاولة')}</Button></div>;
 }
 
@@ -142,6 +150,7 @@ function OwnerDashboard({ owner }: { owner: { name: string; workshopName: string
   return <DashboardPage owner={owner} onLogout={() => logout.mutate(undefined, { onSuccess: () => { queryClient.removeQueries({ queryKey: getGetOwnerSessionQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetOwnerSessionQueryKey() }); } })} />;
 }
 function OwnerLogin() {
+  const t = useTranslation();
   const { lang } = useLanguage();
   const tr = (en: string, ar: string) => lang === 'ar' ? ar : en;
   const [, setLocation] = useLocation();
@@ -198,6 +207,7 @@ function OwnerLogin() {
 }
 
 function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopName: string }; onLogout: () => void }) {
+  const t = useTranslation();
   const { lang } = useLanguage();
   const dashboard = useGetDashboard();
   const ordersQuery = useListOrders();
@@ -234,7 +244,7 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
             <div className="flex flex-col gap-3 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between md:px-6">
               <div><h2 className="font-display text-xl font-bold">{t('Orders', 'الطلبات')}</h2><p className="mt-1 text-xs text-muted-foreground">{t(`${orders.length} orders on your bench`, `${orders.length} طلب على طاولتك`)}</p></div>
               <select aria-label={t('Filter orders', 'تصفية الطلبات')} data-testid="select-order-filter" className="input min-h-10 w-full py-2 sm:w-48" value={filter} onChange={e => setFilter(e.target.value)}>
-                <option value="all">{t('All orders', 'كل الطلبات')}</option><option value="draft">{t('New requests', 'طلبات جديدة')}</option><option value="design_review">{t('Design review', 'مراجعة التصميم')}</option><option value="quoted">{t('Quote sent', 'تم إرسال السعر')}</option><option value="deposit_paid">{t('Deposit paid', 'تم دفع العربون')}</option><option value="in_production">{t('In production', 'قيد التصنيع')}</option><option value="ready">{t('Ready for delivery', 'جاهز للتسليم')}</option><option value="closed">{t('Complete', 'مكتمل')}</option>
+                <option value="all">{t('All orders', 'كل الطلبات')}</option><option value="requested">{t('Requested', 'طلب جديد')}</option><option value="draft">{t('New requests', 'طلبات جديدة')}</option><option value="design_review">{t('Design review', 'مراجعة التصميم')}</option><option value="quoted">{t('Quote sent', 'تم إرسال السعر')}</option><option value="deposit_paid">{t('Deposit paid', 'تم دفع العربون')}</option><option value="in_production">{t('In production', 'قيد التصنيع')}</option><option value="ready">{t('Ready for delivery', 'جاهز للتسليم')}</option><option value="closed">{t('Complete', 'مكتمل')}</option>
               </select>
             </div>
             {orders.length === 0 ? <EmptyOrders /> : filtered.length === 0 ? <div className="p-10 text-center text-sm text-muted-foreground">{t('No orders in this stage.', 'لا توجد طلبات في هذه المرحلة.')}</div> :
@@ -252,9 +262,11 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
   </AppFrame>;
 }
 function EmptyOrders() {
+  const t = useTranslation();
   return <div className="p-8 text-center md:p-14"><div className="mx-auto grid h-16 w-16 place-items-center rounded-[22px] bg-secondary text-primary"><Hammer size={27} /></div><h3 className="font-display mt-4 text-xl font-bold">{t('Your first order starts here', 'ابدأ أول طلب من هنا')}</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{t('Add the buyer and the piece they have in mind. We’ll help you keep the steps clear.', 'أضف بيانات العميل والقطعة التي يريدها. وسنساعدك على توضيح كل خطوة.')}</p><Link href="/orders/new" className="btn btn-primary mt-5" data-testid="link-first-order"><Plus size={17} />{t('Create an order', 'أنشئ طلباً')}</Link></div>;
 }
 function OrderRow({ order, risk }: { order: Order; risk: ReturnType<typeof quoteRisk> }) {
+  const t = useTranslation();
   const { lang } = useLanguage();
   return <Link href={`/orders/${order.id}`} data-testid={`link-order-${order.id}`} className="clickable-row flex items-center gap-4 border-b border-border px-5 py-4 text-inherit no-underline last:border-0 md:px-6">
     <div className="hidden h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-secondary sm:block">{order.images?.[0]?.url ? <img src={order.images[0].url} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-primary"><FileImage size={19} /></div>}</div>
@@ -275,6 +287,7 @@ function OwnerGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 function NewOrderPage() {
+  const t = useTranslation();
   const { lang } = useLanguage();
   const tr = (en: string, ar: string) => lang === 'ar' ? ar : en;
   const [, setLocation] = useLocation();
@@ -330,6 +343,7 @@ function OrderDetailPage() {
   return <OwnerGate><OrderDetailAuthed /></OwnerGate>;
 }
 function OrderDetailAuthed() {
+  const t = useTranslation();
   const params = useParams<{ id: string }>();
   const id = params.id || '';
   const orderQuery = useGetOrder(id, { query: { enabled: !!id, queryKey: getGetOrderQueryKey(id) } });
@@ -339,6 +353,7 @@ function OrderDetailAuthed() {
   return <OrderDetailContent key={order.id} order={order} />;
 }
 function OrderDetailContent({ order }: { order: Order }) {
+  const t = useTranslation();
   const { lang } = useLanguage();
   const tr = (en: string, ar: string) => lang === 'ar' ? ar : en;
   const queryClient = useQueryClient();
@@ -413,13 +428,13 @@ function OrderDetailContent({ order }: { order: Order }) {
           {order.images?.length > 0 && <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{order.images.map(image => <a key={image.id} href={image.url} target="_blank" rel="noreferrer" className="group relative block aspect-[4/3] overflow-hidden rounded-xl bg-secondary" data-testid={`image-order-${image.id}`}><img src={image.url} alt={image.kind === 'design' ? t('Shared design', 'التصميم المشارك') : t('Reference', 'صورة مرجعية')} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /><span className="absolute bottom-2 start-2 rounded-full bg-card/90 px-2 py-1 text-[10px] font-bold">{image.kind === 'design' ? t('Design', 'تصميم') : t('Reference', 'مرجع')}</span></a>)}</div>}
         </section>
           {!['closed', 'cancelled', 'expired'].includes(order.status) && <>
-           {['draft', 'design_review'].includes(order.status) && <section className="surface p-5 md:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="font-display text-lg font-bold">{t('Share a design', 'مشاركة التصميم')}</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('Send a sketch or render for the buyer to review on their private link.', 'أرسل رسماً أو تصوراً للمراجعة من خلال الرابط الخاص بالعميل.')}</p></div><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent"><FileImage size={17} /></div></div>
+           {['requested', 'draft', 'design_review'].includes(order.status) && <section className="surface p-5 md:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="font-display text-lg font-bold">{t('Share a design', 'مشاركة التصميم')}</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('Send a sketch or render for the buyer to review on their private link.', 'أرسل رسماً أو تصوراً للمراجعة من خلال الرابط الخاص بالعميل.')}</p></div><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent"><FileImage size={17} /></div></div>
              <form className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={shareDesign}><label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-muted-foreground"><Upload size={16} /><span className="truncate">{designFile?.name || t('Choose design image', 'اختر صورة التصميم')}</span><input data-testid="input-design-image" type="file" accept="image/*" className="sr-only" onChange={e => setDesignFile(e.target.files?.[0] || null)} /></label><input data-testid="input-design-note" className="input min-h-11" value={designNote} onChange={e => setDesignNote(e.target.value)} placeholder={t('A note for the buyer', 'ملاحظة للعميل')} /><Button type="submit" className="btn-primary" disabled={!designFile || submitDesign.isPending || upload.isPending}>{submitDesign.isPending || upload.isPending ? <LoaderCircle size={17} className="animate-spin" /> : <ArrowUpRight size={17} />}{t('Share', 'مشاركة')}</Button></form>
              {order.designChangeNote && <p className="mt-3 rounded-xl bg-accent/10 p-3 text-sm leading-6">{t('Buyer requested: ', 'طلب العميل: ')}{order.designChangeNote}</p>}
              {order.designApprovedAt && <p className="mt-3 rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-900">{t('The buyer approved this design.', 'اعتمد العميل هذا التصميم.')}</p>}
            </section>}
            <section className="surface p-5 md:p-6"><div className="flex items-start justify-between"><div><h2 className="font-display text-lg font-bold">{t('Quote and payments', 'السعر والدفعات')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('Agree on price before starting the work.', 'اتفق على السعر قبل بدء التنفيذ.')}</p></div>{order.status === 'design_review' && order.designApprovedAt && !order.quote && <Button className="btn-outline min-h-9 px-3 py-2 text-xs" onClick={() => setQuoteOpen(true)} data-testid="button-edit-quote">{t('Prepare quote', 'إعداد السعر')}</Button>}</div>
-             {order.quote ? <div className="mt-5 rounded-xl bg-secondary/55 p-4"><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">{t('Total quote', 'إجمالي السعر')}</span><strong className="font-display text-2xl">{money(order.quote.totalDisplay, order.quote.displayCurrency)}</strong></div><div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border/70 pt-3 text-sm"><span className="text-muted-foreground">{t('Deposit', 'العربون')} · {order.quote.depositPercent}%</span><strong>{money(order.quote.depositAmountDisplay, order.quote.displayCurrency)}</strong></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{t('Expires', 'ينتهي')} {dateShort(order.quote.expiresAt)}</span><span>{t('Workshop equivalent', 'المعادل بالجنيه')} {money(order.quote.totalEgp)}</span></div></div> : <p className="mt-5 rounded-xl bg-muted p-4 text-sm text-muted-foreground">{order.designApprovedAt ? t('The design is approved. Prepare a quote to continue.', 'تم اعتماد التصميم. أعد السعر للمتابعة.') : t('Share a design and wait for buyer approval before sending a quote.', 'شارك التصميم وانتظر اعتماد العميل قبل إرسال السعر.')}</p>}
+             {order.quote ? <div className="mt-5 rounded-xl bg-secondary/55 p-4"><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">{t('Total quote', 'إجمالي السعر')}</span><strong className="font-display text-2xl">{money(order.quote.totalDisplay, order.quote.displayCurrency)}</strong></div><div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border/70 pt-3 text-sm"><span className="text-muted-foreground">{t('Deposit', 'العربون')} · {formatDepositPercent(order.quote.depositPercent)}</span><strong>{money(order.quote.depositAmountDisplay, order.quote.displayCurrency)}</strong></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{t('Expires', 'ينتهي')} {dateShort(order.quote.expiresAt)}</span><span>{t('Workshop equivalent', 'المعادل بالجنيه')} {money(order.quote.totalEgp)}</span></div></div> : <p className="mt-5 rounded-xl bg-muted p-4 text-sm text-muted-foreground">{order.designApprovedAt ? t('The design is approved. Prepare a quote to continue.', 'تم اعتماد التصميم. أعد السعر للمتابعة.') : t('Share a design and wait for buyer approval before sending a quote.', 'شارك التصميم وانتظر اعتماد العميل قبل إرسال السعر.')}</p>}
           </section>
           <section className="surface p-5 md:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg font-bold">{t('Progress', 'التقدم')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('Let the buyer see the work taking shape.', 'أطلع العميل على تقدم العمل.')}</p></div>{['deposit_paid', 'in_production'].includes(order.status) && <Button className="btn-outline min-h-9 px-3 py-2 text-xs" onClick={() => setProgressOpen(true)} data-testid="button-add-progress"><Plus size={15} />{t('Post update', 'إضافة تحديث')}</Button>}</div>
             <ProgressTimeline updates={order.progress || []} />
@@ -459,7 +474,7 @@ function OrderDetailContent({ order }: { order: Order }) {
         <div className="rounded-xl bg-secondary/70 p-4">
           <div className="flex justify-between gap-2 text-sm"><span className="text-muted-foreground">{t('Quoted total', 'السعر الإجمالي')}</span><strong data-testid="text-quote-total">{money(totalDisplay, quote.currency)}</strong></div>
           <p className="mt-1 text-xs text-muted-foreground">{money(totalEgp)} {t('before conversion', 'قبل التحويل')}</p>
-          <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground"><span>{t('Deposit · materials share', 'العربون · حصة الخامات')}</span><strong data-testid="text-quote-deposit">{money(depositAmountDisplay, quote.currency)} · {depositPercent}%</strong></div>
+          <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground"><span>{t('Deposit · materials share', 'العربون · حصة الخامات')}</span><strong data-testid="text-quote-deposit">{money(depositAmountDisplay, quote.currency)} · {formatDepositPercent(depositPercent / 100)}</strong></div>
         </div>
         <RateWhatIf lang={lang} materials={Number(quote.materials || 0)} labor={Number(quote.labor || 0)} total={totalEgp} />
         {formError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{formError}</p>}
@@ -487,6 +502,7 @@ function Detail({ label, value }: { label: string; value: string }) {
   return <div><span className="text-xs font-semibold text-muted-foreground">{label}</span><p className="mt-1 text-sm font-semibold leading-6">{value}</p></div>;
 }
 function OrderSteps({ order }: { order: Order }) {
+  const t = useTranslation();
   const { lang } = useLanguage();
   const steps: [string, string][] = [['Design review', 'مراجعة التصميم'], ['Deposit paid', 'دفع العربون'], ['In the workshop', 'في الورشة'], ['Ready to deliver', 'جاهز للتسليم'], ['Order complete', 'اكتمل الطلب']];
   const active = order.status === 'design_review' && order.designApprovedAt ? 1 : stageIndex[order.status] ?? 0;
@@ -497,11 +513,13 @@ function OrderSteps({ order }: { order: Order }) {
   })}</div>;
 }
 function ProgressTimeline({ updates }: { updates: Order['progress'] }) {
+  const t = useTranslation();
   if (!updates.length) return <div className="mt-5 rounded-xl bg-muted/80 p-4 text-sm text-muted-foreground">{t('Work updates shared by the workshop will appear here.', 'ستظهر هنا تحديثات العمل التي تشاركها الورشة.')}</div>;
   return <div className="relative mt-5 space-y-0">{[...updates].reverse().map((u, index) => <div key={u.id} className="relative flex gap-3 pb-5 last:pb-0" data-testid={`progress-update-${u.id}`}><div className="relative z-10 mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-secondary text-primary"><CheckCircle2 size={14} /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-baseline justify-between gap-1"><h3 className="text-sm font-bold">{u.stage}</h3><span className="text-[11px] text-muted-foreground">{dateShort(u.createdAt)}</span></div>{u.note && <p className="mt-1 text-sm leading-6 text-muted-foreground">{u.note}</p>}{u.photoUrl && <img src={u.photoUrl} alt={t('Progress photo', 'صورة التقدم')} className="mt-3 max-h-52 w-full rounded-xl object-cover" />}</div>{index < updates.length - 1 && <div className="absolute inset-y-7 start-[11px] w-px bg-border" />}</div>)}</div>;
 }
 
 function BuyerPage() {
+  const t = useTranslation();
   const { lang } = useLanguage();
   const params = useParams<{ token: string }>();
   const token = params.token || '';
@@ -582,6 +600,7 @@ function BuyerPage() {
   </AppFrame>;
 }
 function ClosedSummary({ order }: { order: Order }) {
+  const t = useTranslation();
   return <section className="surface p-6 md:p-8"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary text-primary-foreground"><CheckCircle2 size={26} /></div><h2 className="font-display mt-4 text-center text-2xl font-extrabold">{order.status === 'cancelled' ? t('This order was cancelled', 'تم إلغاء هذا الطلب') : order.status === 'expired' ? t('This quote has expired', 'انتهت صلاحية عرض السعر') : t('A piece made just for you.', 'قطعة صُنعت خصيصاً لك.')}</h2><p className="mx-auto mt-2 max-w-md text-center text-sm leading-6 text-muted-foreground">{order.status === 'closed' ? t('The order is complete. Thank you for working with', 'اكتمل الطلب. شكراً لثقتك في') + ` ${order.workshopName || order.ownerName}.` : t('Contact the workshop if you have a question about this order.', 'تواصل مع الورشة إذا كان لديك أي سؤال عن الطلب.')}</p><div className="mt-6 grid gap-3 sm:grid-cols-2"><div className="rounded-xl bg-secondary/70 p-4"><span className="text-xs text-muted-foreground">{t('Order', 'الطلب')}</span><p className="mt-1 font-semibold">{order.title}</p></div><div className="rounded-xl bg-secondary/70 p-4"><span className="text-xs text-muted-foreground">{t('Workshop', 'الورشة')}</span><p className="mt-1 font-semibold">{order.workshopName || order.ownerName}</p></div></div>{order.quote && <div className="mt-3 flex items-center justify-between rounded-xl border border-border p-4"><span className="text-sm text-muted-foreground">{t('Final total', 'الإجمالي النهائي')}</span><strong>{money(order.quote.totalDisplay, order.quote.displayCurrency)}</strong></div>}</section>;
 }
 
@@ -599,6 +618,7 @@ function Router() {
   </Switch></ErrorBoundary>;
 }
 function NotFound() {
+  const t = useTranslation();
   return <AppFrame><div className="mx-auto max-w-lg px-5 py-24 text-center"><Logo /><div className="surface mt-8 p-8"><p className="font-display text-5xl font-extrabold text-accent">404</p><h1 className="mt-3 text-xl font-bold">{t('This page is not on the workbench.', 'هذه الصفحة غير موجودة.')}</h1><Link href="/" className="btn btn-primary mt-5">{t('Return to Wasta', 'العودة لوسطى')}</Link></div></div></AppFrame>;
 }
 function App() {
