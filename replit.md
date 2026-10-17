@@ -1,60 +1,66 @@
 # Wasta
 
-Wasta helps small Egyptian workshops manage custom orders, share production progress, and collect simulated milestone payments from buyers through private links.
+Wasta helps Egyptian workshops manage custom furniture orders and share progress with buyers through private links. The active backend uses SQLite; real payment checkout is not connected.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server
 - `pnpm --filter @workspace/wasta run dev` — run the Wasta web app
+- `pnpm --filter @workspace/wasta-server run test` — isolated backend integration tests
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- The legacy PostgreSQL schema and database are retained, but the active server does not use them. Existing PostgreSQL orders were not migrated.
 - Required env: `SESSION_SECRET` — signs owner session cookies
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
+- Active DB: SQLite via better-sqlite3, in `server/data/wasta.sqlite`
+- Validation: Zod
+- Legacy frontend API codegen: Orval (from OpenAPI spec)
 - Web: React + Vite in `artifacts/wasta`
-- Build: esbuild (API bundle)
+- Server runtime: tsx (development and production)
 
 ## Where things live
 
 - `artifacts/wasta/src/App.tsx` — owner and buyer experience, routes, and Arabic/English interface
-- `artifacts/api-server/src/routes/wasta.ts` — Wasta API, validation, auth, and order actions
-- `artifacts/api-server/src/lib/wasta.ts` — status transitions, seed data, quote calculations, and dashboard totals
-- `artifacts/api-server/src/lib/payments.ts` — simulated payment adapter
-- `artifacts/api-server/uploads/` — demo images and locally uploaded image files
-- `lib/db/src/schema/wasta.ts` — PostgreSQL tables
-- `lib/api-spec/openapi.yaml` — API contract source of truth
+- `server/index.ts` — active Express entrypoint, run by the API artifact
+- `server/db.ts`, `server/seed.ts` — SQLite schema, transitions, serialization, and seed data
+- `server/routes/` — active order, quote, upload, FX, and payment-boundary routes
+- `shared/contract.ts` — supplied three-contributor API/type contract
+- `server/README.md` — backend handoff and current payment limitation
+- `client/src/App.tsx` — contributor route shell, not the existing web artifact entrypoint
+- `uploads/` — locally uploaded images; `artifacts/api-server/uploads/` supplies bundled demo images
+- `lib/api-spec/openapi.yaml` — previous frontend contract, not renamed during contributor handoff
 
 ## Architecture decisions
 
 - Owner sign-in uses the requested phone + 4-digit PIN flow; buyers use unguessable magic links and do not create accounts.
-- Payments are simulated behind a provider interface; deposits remain held until delivery confirmation and balance payment.
+- Paymob was requested but is unavailable through the supported payment setup. Checkout/webhooks fail explicitly with 503; the internal verified-settlement bookkeeping is tested but not publicly callable.
 - Quotes store their exchange rate at send time. The displayed demo rates are editable before the quote is locked.
-- User-uploaded images are saved to the API service's local uploads folder for this MVP.
+- User-uploaded images and SQLite are local to this MVP service; the previous PostgreSQL database was left untouched to avoid deleting prior data.
+- The shared contract uses `requested`, not `draft`, and `depositPercent` is a fraction (0.5 = 50%). Read-only legacy field aliases remain while frontend contributors adapt.
 
 ## Product
 
 - Arabic-first, RTL-capable owner dashboard and buyer order page with an English toggle.
-- Order creation, design approval and change requests, quote creation, progress updates, WhatsApp links, notifications, and simulated checkout.
+- Backend supports public quiz orders, design review/changes, locked quotes, photo uploads, progress, readiness, notifications, and owner totals.
 - Seeded demo owner: Reda, phone `01001234567`, PIN `1234`.
 
 ## User preferences
 
-- Keep real payments, WhatsApp API messaging, and public buyer accounts out of this MVP.
+- The user is coordinating three contributors in one shared project. Never rename shared types/routes or rewrite another contributor's area.
+- Person 1 owns `server/index.ts`, `db.ts`, `seed.ts`, order/quote/payment/Paymob/upload/FX route files, `shared/contract.ts`, and the initial `client/src/App.tsx` shell.
+- Person 2 owns `server/routes/meshy.ts`, `catalog.ts`, and `client/src/buyer/**`, `client/src/quiz/**`. Person 3 owns `client/src/owner/**`.
+- Dependency/startup configuration changes were explicitly authorized to run the SQLite backend. Other frontend source remains unchanged.
 
 ## Gotchas
 
 - After changing `lib/api-spec/openapi.yaml`, run codegen before building against the generated types.
-- After changing `lib/db/src/schema/`, push the development database schema with the `@workspace/db` push command.
-- Local image files are suitable for the MVP demo but need durable object storage if uploads must persist across published service replacements.
+- Do not claim payment success from a return URL or bypass webhook verification for live payments. “Held/released” records are not provider escrow.
+- SQLite and image files need durable storage if they must survive published service replacements.
 
 ## Pointers
 

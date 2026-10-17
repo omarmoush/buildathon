@@ -1,0 +1,33 @@
+{
+  "name": "@workspace/wasta-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx index.ts",
+    "build": "esbuild index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js",
+    "start": "tsx index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/backend.test.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.2.1",
+    "multer": "^2.4.0",
+    "pino": "^9.14.0",
+    "pino-http": "^10.5.0",
+    "tsx": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.3.0",
+    "@types/node": "catalog:",
+    "@types/supertest": "^7.2.1",
+    "esbuild": "0.28.2",
+    "supertest": "^7.3.1"
+  }
+}
