@@ -1,7 +1,9 @@
 import { Router, type RequestHandler } from "express";
 import { randomBytes, randomUUID, createHmac, scryptSync, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { ApiError, db, getOrder, listOrders, money, notifications, notify, payableTotals, transition } from "../db";
+import { ApiError, db, getOrder, listOrders, money, newOrderCode, normalizeOrderCode, notifications, notify, payableTotals, transition } from "../db";
+import { findCatalogItem } from "../lib/catalog";
+import { CATEGORIES } from "../../artifacts/api-server/src/lib/furniture-art";
 import type { OrderSpec } from "../../shared/contract";
 import { calculateEstimate } from "../lib/estimates";
 
@@ -84,26 +86,34 @@ export const specSchema = z.object({
   notes: z.string().max(10000).default(""),
   referencePhotos: z.array(z.string().max(2000).regex(/^\/(?:api\/)?uploads\/[a-f0-9-]+\.(?:jpg|png|webp|gif)$/)).max(5).optional(),
   bedroomPieces: z.array(z.enum(["bed", "nightstands", "wardrobe", "dresser"])).max(4).optional(),
+  pieces: z.array(z.enum(CATEGORIES)).max(CATEGORIES.length).optional(),
   generationTaskId: z.string().max(1000).optional(),
 });
 ordersRouter.post("/orders", rateLimit("create-order", 40, 3600000), async (req, res) => {
   const legacy = !req.body?.spec && typeof req.body?.title === "string";
+  // Workshop-created orders may name catalog products (built-in or workshop-added); the first one is previewed.
+  const productIds: unknown[] = legacy && Array.isArray(req.body.productIds) ? req.body.productIds.slice(0, 10) : [];
+  const products = (await Promise.all(productIds.map(id => findCatalogItem(String(id))))).filter(item => !!item);
+  const first = products[0];
   const body = legacy ? { ...req.body, spec: {
-    productType: req.body.title, pieceSource: "customized", dimensions: { w: 1, d: 1, h: 1 },
-    notes: req.body.description ?? "", deliveryCountry: req.body.buyerCountry,
+    productType: req.body.title, pieceSource: first ? "catalog" : "customized", dimensions: first?.defaultDims ?? { w: 1, d: 1, h: 1 },
+    notes: [req.body.description ?? "", products.length ? `Products: ${products.map(item => item.name).join(", ")}` : ""].filter(Boolean).join("\n"),
+    deliveryCountry: req.body.buyerCountry,
+    ...(first ? { catalogItemId: first.id, glbUrl: first.glbUrl, thumbnailUrl: first.thumbnailUrl, wood: first.woods[0], finish: first.finishes[0],
+      pieces: [...new Set(products.map(item => item.category))] } : {}),
   } } : req.body;
   const data = z.object({ buyerName: z.string().trim().min(1).max(200),
     buyerPhone: z.string().trim().min(6).max(40), buyerCountry: z.string().trim().min(1).max(100),
     spec: specSchema }).parse(body);
-  const id = randomUUID(); const token = randomBytes(32).toString("hex");
+  const id = randomUUID(); const token = randomBytes(32).toString("hex"); const code = newOrderCode();
   const estimate = legacy ? null : calculateEstimate(data.spec);
   await db.transaction(async () => {
     await db.prepare(`INSERT INTO orders (id,owner_id,buyer_name,buyer_phone,buyer_country,title,description,
-      dimensions,spec_json,status,token,created_at) VALUES (?,?,?,?,?,?,?,?,?,'requested',?,?)`)
+      dimensions,spec_json,status,token,code,created_at) VALUES (?,?,?,?,?,?,?,?,?,'requested',?,?,?)`)
       .run(id, "reda", data.buyerName, data.buyerPhone, data.buyerCountry, data.spec.productType,
         data.spec.notes, legacy ? String(req.body.dimensions ?? "") :
           `${data.spec.dimensions.w} × ${data.spec.dimensions.d} × ${data.spec.dimensions.h} cm`,
-        JSON.stringify(data.spec satisfies OrderSpec), token, new Date().toISOString());
+        JSON.stringify(data.spec satisfies OrderSpec), token, code, new Date().toISOString());
     if (estimate) await db.prepare("INSERT INTO order_estimates (order_id,estimate_json) VALUES (?,?)")
       .run(id, JSON.stringify(estimate));
     await notify(id, "A new custom order was requested.");
@@ -114,10 +124,17 @@ ordersRouter.post("/orders", rateLimit("create-order", 40, 3600000), async (req,
         .run(randomUUID(), id, url, "reference", new Date().toISOString());
     }
   });
-  res.status(201).json(legacy ? { ...getOrder(id), orderId: id, token } : { orderId: id, token, estimate });
+  res.status(201).json(legacy ? { ...await getOrder(id), orderId: id, token } : { orderId: id, token, orderCode: code, estimate });
 });
 ordersRouter.get("/orders", requireOwner, async (_req, res) => { res.json(await listOrders(res.locals.ownerId)); });
 ordersRouter.get("/orders/:id", requireOwner, async (req, res) => { res.json(await ownedOrder(String(req.params.id), res.locals.ownerId)); });
+// A short order ID (AK-XXXX-XXXX) opens the same buyer page as the private link.
+ordersRouter.get("/track/:code", rateLimit("track", 30, 15 * 60000), async (req, res) => {
+  const code = normalizeOrderCode(String(req.params.code));
+  const row = code ? await db.prepare("SELECT token FROM orders WHERE code=?").get<{ token: string }>(code) : undefined;
+  if (!row) throw new ApiError(404, "No order matches this ID.", "ORDER_NOT_FOUND");
+  res.json({ token: row.token });
+});
 ordersRouter.get(["/b/:token", "/buyer/:token"], async (req, res) => { res.json(await getOrder(String(req.params.token), true)); });
 ordersRouter.post("/orders/:id/start-design", requireOwner, async (req, res) => {
   const order = await ownedOrder(String(req.params.id), res.locals.ownerId);

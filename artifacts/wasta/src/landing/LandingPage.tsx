@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ArrowLeft, ArrowRight, Hammer, Languages, RotateCw, Sparkles, Ruler, Armchair } from "lucide-react";
+import { ArrowLeft, ArrowRight, Hammer, Languages, RotateCw, Sparkles, Ruler, Armchair, PackageSearch, ShieldCheck } from "lucide-react";
+import { TrackOrderDialog } from "./TrackOrder";
 import { api } from "../quiz/api";
 import type { CatalogItem, Language } from "../quiz/types";
 import Furniture3D from "../buyer/Furniture3D";
@@ -23,6 +24,14 @@ export default function LandingPage() {
   const [failed, setFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [product, setProduct] = useState("bedroom-set");
+  // The order-ID popup opens once per visit; the nav button reopens it.
+  const [tracking, setTracking] = useState(() => {
+    try { return sessionStorage.getItem("akshab-track-seen") !== "1"; } catch { return false; }
+  });
+  const closeTracking = useCallback(() => {
+    setTracking(false);
+    try { sessionStorage.setItem("akshab-track-seen", "1"); } catch { /* private browsing */ }
+  }, []);
 
   const load = useCallback(() => {
     setFailed(false); setItems(null);
@@ -38,9 +47,9 @@ export default function LandingPage() {
     <div className="wl grain" dir={rtl ? "rtl" : "ltr"} lang={lang} style={{ fontFamily: rtl ? "'IBM Plex Sans Arabic',sans-serif" : undefined }}>
       <header className="wl-nav">
         <div className="wl-wrap">
-          <Link href="/" className="wl-logo" aria-label="Wasta">
+          <Link href="/" className="wl-logo" aria-label="Akshab">
             <span className="wl-mark" aria-hidden="true"><Hammer size={18} color="hsl(var(--sidebar-primary))" /></span>
-            {t("وسطة", "Wasta")}
+            {t("أخشاب", "Akshab")}
           </Link>
           <nav className="wl-links" aria-label={t("التنقل", "Main")}>
             <a href="#paths">{t("ابدأ", "Start")}</a>
@@ -52,7 +61,10 @@ export default function LandingPage() {
             <button className="btn btn-outline" style={{ minHeight: 40, padding: "6px 12px" }} onClick={() => setLang(rtl ? "en" : "ar")} aria-label={t("Switch to English", "التبديل إلى العربية")}>
               <Languages size={16} /> {rtl ? "EN" : "عربي"}
             </button>
-            <Link href="/owner" className="btn btn-soft" style={{ minHeight: 40, padding: "6px 12px" }}>{t("دخول الورشة", "Workshop sign-in")}</Link>
+            <button className="btn btn-primary" style={{ minHeight: 40, padding: "6px 12px" }} onClick={() => setTracking(true)} data-testid="button-open-track">
+              <PackageSearch size={16} /> {t("تابع طلبك", "Track order")}
+            </button>
+            <Link href="/owner" className="btn btn-soft wl-hide-sm" style={{ minHeight: 40, padding: "6px 12px" }}>{t("دخول الورشة", "Workshop sign-in")}</Link>
           </div>
         </div>
       </header>
@@ -63,7 +75,7 @@ export default function LandingPage() {
             <div className="page-enter">
               <span className="wl-eyebrow">{t("من ورش دمياط إلى بيتك", "From Damietta workshops to your home")}</span>
               <h1 className="wl-h1">{t("اختار أثاثك، وافهم تكلفته", "Pick your furniture, understand its cost")}<em>{t(" قبل ما تطلب.", " before you order.")}</em></h1>
-              <p className="wl-lead">{t("وسطة بتوصلك بورش أثاث دمياط. اختار من الكتالوج، عدّل المقاسات والخشب، أو اوصف اللي في بالك، وخد تقدير استرشادي قبل أي التزام.", "Wasta connects you with Damietta furniture workshops. Choose from the catalog, customize sizes and wood, or describe what you imagine, and get an indicative estimate before committing.")}</p>
+              <p className="wl-lead">{t("أخشاب بتوصلك بورش أثاث دمياط. اختار من الكتالوج، عدّل المقاسات والخشب، أو اوصف اللي في بالك، وخد تقدير استرشادي قبل أي التزام.", "Akshab connects you with Damietta furniture workshops. Choose from the catalog, customize sizes and wood, or describe what you imagine, and get an indicative estimate before committing.")}</p>
               <div className="wl-cta">
                 <Link href="/quiz" className="btn btn-primary" data-testid="link-start-quiz">{t("ابدأ التصميم", "Start designing")} <Arrow size={18} /></Link>
                 <a href="#catalog" className="btn btn-outline">{t("تصفح الكتالوج", "Browse the catalog")}</a>
@@ -174,19 +186,22 @@ export default function LandingPage() {
               <div>
                 <h2 className="wl-h2" id="cost-h">{t("التكلفة بوضوح", "Cost, plainly")}</h2>
                 <p>{t("ما تراه أولًا تقدير استرشادي. بعد اعتماد الورشة للتصميم يصلك العرض النهائي. العربون المتوقع 50% من العرض النهائي.", "What you see first is an indicative estimate. After the workshop approves the design you get a final quote. The expected deposit is 50% of that final quote.")}</p>
+                <p><ShieldCheck size={18} style={{ display: "inline", verticalAlign: "-3px", marginInlineEnd: 6 }} />{t("أخشاب وسيط ضامن: العربون يُدفع لحساب ضمان أخشاب، وليس للورشة مباشرة، ويُحوَّل للورشة فقط بعد ما تستلم وتؤكد. لو حصلت مشكلة، أخشاب تتدخل.", "Akshab is the escrow middleman: your deposit is paid into Akshab's escrow account, not straight to the workshop, and is released only after you receive and confirm. If something goes wrong, Akshab steps in.")}</p>
               </div>
               <div>
                 <div className="wl-bar" aria-hidden="true"><i /></div>
-                <p style={{ margin: 0, fontSize: ".9rem" }}>{t("الدفع الإلكتروني غير متاح حاليًا، ولا يوجد دفع فعلي عبر الموقع.", "Online payment isn't available yet, and nothing is charged through the site.")}</p>
+                <p style={{ margin: "0 0 8px", fontSize: ".9rem" }}>{t("العربون ← حساب ضمان أخشاب ← الورشة بعد التسليم", "Deposit → Akshab escrow → workshop after delivery")}</p>
+                <p style={{ margin: 0, fontSize: ".8rem", opacity: .75 }}>{t("محاكاة توضيحية للعرض؛ لا يوجد حساب ضمان حقيقي.", "A simulation for this demo; there is no real escrow account.")}</p>
               </div>
             </div>
           </div>
         </section>
       </main>
 
+      <TrackOrderDialog lang={lang} open={tracking} onClose={closeTracking} />
       <footer className="wl-foot">
         <div className="wl-wrap">
-          <span>{t("وسطة، ورش دمياط للأثاث", "Wasta, Damietta furniture workshops")}</span>
+          <span>{t("أخشاب، ورش دمياط للأثاث", "Akshab, Damietta furniture workshops")}</span>
           <span style={{ display: "flex", gap: 16 }}>
             <Link href="/quiz">{t("ابدأ", "Start")}</Link>
             <Link href="/owner">{t("دخول الورشة / الإدارة", "Workshop / admin sign-in")}</Link>

@@ -28,7 +28,7 @@ export async function createCheckout(order: Order, type: PaymentType, amountEgp:
     headers: { Authorization: `Token ${config.secretKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       amount: amountCents, currency: "EGP", payment_methods: [config.integrationId],
-      items: [{ name: `${label} · ${order.spec.productType}`.slice(0, 50), amount: amountCents, description: `Wasta order ${order.id.slice(0, 8)}`, quantity: 1 }],
+      items: [{ name: `${label} · ${order.spec.productType}`.slice(0, 50), amount: amountCents, description: `Akshab order ${order.id.slice(0, 8)}`, quantity: 1 }],
       billing_data: {
         first_name: firstName || "Buyer", last_name: rest.join(" ") || "NA",
         phone_number: order.buyerPhone || "NA", email: PLACEHOLDER_EMAIL, country: order.buyerCountry || "NA",

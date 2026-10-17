@@ -1,12 +1,14 @@
 import type { Order } from '@workspace/api-client-react';
 import Furniture3D from '../buyer/Furniture3D';
 import { demoCatalog } from '../quiz/demo';
+import { categoryLabel } from '../quiz/furniture';
 
 type Spec = {
   productType?: string;
   pieceSource?: string;
   catalogItemId?: string;
   bedroomPieces?: string[];
+  pieces?: string[];
   style?: string[];
   dimensions?: { w?: number; d?: number; h?: number };
   wood?: string;
@@ -29,7 +31,7 @@ export function OrderSpecification({ order, lang }: { order: Order; lang: 'ar' |
   const details = [
     [tr('Product', 'المنتج'), spec.productType],
     [tr('Style', 'الطراز'), Array.isArray(spec.style) ? spec.style.join(' · ') : undefined],
-    [tr('Included pieces', 'القطع المطلوبة'), spec.bedroomPieces?.join(' · ')],
+    [tr('Included pieces', 'القطع المطلوبة'), spec.pieces?.length ? spec.pieces.map(piece => categoryLabel(piece, lang)).join(' · ') : spec.bedroomPieces?.join(' · ')],
     [tr('Dimensions · cm', 'الأبعاد · سم'), spec.dimensions ? [spec.dimensions.w, spec.dimensions.d, spec.dimensions.h].map(value => value ?? '—').join(' × ') : undefined],
     [tr('Wood', 'الخشب'), spec.wood],
     [tr('Finish', 'التشطيب'), spec.finish],

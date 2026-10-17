@@ -1,5 +1,6 @@
 import Furniture3D from "../buyer/Furniture3D";
 import type { CatalogItem, Language, Spec } from "./types";
+import { CATEGORIES, categoryLabel, recolor } from "./furniture";
 import type { useFurnitureGeneration } from "./useFurnitureGeneration";
 
 export function GenerationPanel({ generation, lang, onKeep, onFallback, onPrompt, prompt }: {
@@ -36,11 +37,19 @@ export default function PieceStep({ spec, patch, catalog, lang }: {
   spec: Spec; patch: (value: Partial<Spec>) => void; catalog: CatalogItem[]; lang: Language;
 }) {
   const t = (ar: string, en: string) => lang === "ar" ? ar : en;
-  const select = (item: CatalogItem) => patch({
-    catalogItemId: item.id, glbUrl: item.glbUrl, usdzUrl: item.usdzUrl, thumbnailUrl: item.thumbnailUrl,
-    dimensions: { ...item.defaultDims }, wood: item.woods[0], finish: item.finishes[0],
-    prompt: undefined, generationTaskId: undefined,
-  });
+  const style = spec.style[0];
+  const select = (item: CatalogItem) => {
+    const colors = { wood: item.woods[0], finish: item.finishes[0] };
+    patch({
+      catalogItemId: item.id, glbUrl: recolor(item.glbUrl, colors), usdzUrl: item.usdzUrl,
+      thumbnailUrl: recolor(item.thumbnailUrl, { ...colors, style }),
+      dimensions: { ...item.defaultDims }, ...colors, prompt: undefined, generationTaskId: undefined,
+    });
+  };
+  // Only show catalog pieces in the categories the buyer picked, grouped by category.
+  const groups = (spec.pieces?.length ? spec.pieces : CATEGORIES.map(category => category.id as string))
+    .map(category => ({ category, items: catalog.filter(item => (item.category ?? "") === category) }))
+    .filter(group => group.items.length);
   return <div className="wb-stack">
     <div className="wb-grid">
       {([
@@ -52,12 +61,17 @@ export default function PieceStep({ spec, patch, catalog, lang }: {
         <strong>{title}</strong><small>{subtitle}</small>
       </button>)}
     </div>
-    {spec.pieceSource !== "generated" && <div className="wb-grid" aria-label={t("كتالوج القطع", "Furniture catalog")}>
-      {catalog.map(item => <button className="wb-card" key={item.id} aria-pressed={spec.catalogItemId === item.id} onClick={() => select(item)}>
-        {item.thumbnailUrl && <img src={item.thumbnailUrl} alt="" loading="lazy" />}
-        <strong>{lang === "ar" ? item.nameAr || item.name : item.name}</strong><small dir="ltr">{item.defaultDims.w} × {item.defaultDims.d} × {item.defaultDims.h} cm</small>
-      </button>)}
-    </div>}
+    {spec.pieceSource !== "generated" && <>
+      {(spec.pieces?.length || 0) > 1 && <p className="wb-muted">{t("اختر القطعة الرئيسية للمعاينة ثلاثية الأبعاد. اكتب تفاصيل باقي القطع في الملاحظات.", "Pick the main piece for the 3D preview. Add details for your other pieces in the notes.")}</p>}
+      {!groups.length && catalog.length > 0 && <p className="wb-notice">{t("لا توجد قطع جاهزة لهذه الفئات بعد. جرّب «ولّد قطعة جديدة».", "No ready pieces in these categories yet. Try “Generate new”.")}</p>}
+      {groups.map(group => <section key={group.category} aria-label={categoryLabel(group.category, lang)}>
+        <h2>{categoryLabel(group.category, lang)}</h2>
+        <div className="wb-grid">{group.items.map(item => <button className="wb-card" key={item.id} aria-pressed={spec.catalogItemId === item.id} onClick={() => select(item)}>
+          {item.thumbnailUrl && <img src={recolor(item.thumbnailUrl, { style }) ?? item.thumbnailUrl} alt="" loading="lazy" />}
+          <strong>{lang === "ar" ? item.nameAr || item.name : item.name}</strong><small dir="ltr">{item.defaultDims.w} × {item.defaultDims.d} × {item.defaultDims.h} cm</small>
+        </button>)}</div>
+      </section>)}
+    </>}
     {spec.pieceSource !== "generated" && spec.glbUrl && <Furniture3D model={spec} dimensions={spec.dimensions}
       baseDimensions={catalog.find(item => item.id === spec.catalogItemId)?.defaultDims} lang={lang} />}
   </div>;

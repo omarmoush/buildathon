@@ -59,6 +59,6 @@ export default function Furniture3D({ model, dimensions, baseDimensions, lang = 
       : state === "error" ? t("تعذّر تحميل المعاينة. اختياراتك محفوظة، ويمكنك المتابعة.", "Preview unavailable. Your choices are saved; you can continue.")
       : t("اسحب للتدوير • قرّب للتفاصيل", "Drag to rotate • Pinch to zoom")}</p>
     {state === "ready" && !canAR && <p>{t("للواقع المعزز، افتح هذا الرابط على هاتفك في Safari أو Chrome.", "For AR, open this link on your phone in Safari or Chrome.")}</p>}
-    {scaled && <small>{t("المعاينة تغيّر الحجم فقط؛ الخشب والتشطيب يُحفظان في المواصفات.", "Preview changes size only; wood and finish are saved in the specification.")}</small>}
+    {scaled && <small>{t("المعاينة تعكس المقاس ولون الخشب والتشطيب.", "The preview reflects the size, wood colour and finish.")}</small>}
   </section>;
 }

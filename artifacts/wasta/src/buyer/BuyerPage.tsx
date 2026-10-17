@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
 import Furniture3D from "./Furniture3D";
 import { EstimateCard } from "../quiz/EstimateCard";
-import { Link } from "wouter";
 import { api, ApiError, openPaymobCheckout } from "../quiz/api";
 import { demoCatalog, demoOrder } from "../quiz/demo";
 import type { BuyerOrder, Language } from "../quiz/types";
+import { BrandHeader, EscrowSteps } from "../quiz/BrandHeader";
+import { categoryLabel } from "../quiz/furniture";
 import "../quiz/buyer.css";
 
 export default function BuyerPage({ token: suppliedToken }: { token?: string }) {
@@ -77,7 +78,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
     natural: t("طبيعي", "Natural"), matte: t("مطفي", "Matte"), white: t("أبيض", "White"),
     modern: t("مودرن", "Modern"), classic: t("كلاسيك", "Classic"), japandi: t("ياباني بسيط", "Japandi"), scandinavian: t("اسكندنافي", "Scandinavian"),
     cutting: t("التقطيع", "Cutting"), assembly: t("التجميع", "Assembly"), finishing: t("التشطيب", "Finishing"),
-    held: t("محتجز حتى التسليم", "Held until delivery"), released: t("تم التحويل", "Released"), pending: t("قيد المعالجة", "Pending"),
+    held: t("محفوظ في حساب ضمان أخشاب", "Held in Akshab escrow"), released: t("حُوّل للورشة", "Released to the workshop"), pending: t("قيد المعالجة", "Pending"),
   };
   function demoAction(action: string) {
     setOrder(current => {
@@ -127,9 +128,16 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
   const validQuote = quote && Number.isFinite(quote.fxRate) && quote.fxRate > 0
     && Number.isFinite(quote.depositEgp) && quote.depositEgp >= 0 && quote.depositEgp <= quote.totalEgp;
   const quoteExpired = !quote || !Number.isFinite(Date.parse(quote.expiresAt)) || Date.parse(quote.expiresAt) <= now;
+  // Where the (simulated) escrow is: awaiting deposit, holding it, awaiting delivery confirmation, or paid out.
+  const escrowStage = (current: typeof order & object) => {
+    const held = current.payments.some(payment => payment.type === "deposit" && payment.state !== "pending");
+    if (["delivered", "closed"].includes(current.status)) return 4;
+    if (current.status === "ready" && held) return 2;
+    return held ? 1 : 0;
+  };
   const stageOrder = ["requested", "design_review", "quoted", "deposit_paid", "in_production", "ready", "delivered", "closed"];
   return <div className="wb" dir={lang === "ar" ? "rtl" : "ltr"} lang={lang}>
-    <header><Link className="wb-link" href="/"><strong>{t("وسطى", "Wasta")}</strong></Link><span>{t("طلبك الخاص", "Your private order")}</span><button onClick={() => setLang(lang === "ar" ? "en" : "ar")}>{lang === "ar" ? "English" : "العربية"}</button></header>
+    <BrandHeader lang={lang} onToggleLanguage={() => setLang(lang === "ar" ? "en" : "ar")} meta={t("طلبك الخاص", "Your private order")} />
     <main>
       {demo && <section className="wb-notice"><p>{t("عرض تجريبي: لا توجد دفعات أو طلبات حقيقية.", "Demo: no real payments or orders.")}</p>
         <label>{t("معاينة مرحلة", "Preview a stage")}<select value={order?.status || "requested"} onChange={e => setOrder(current => {
@@ -147,7 +155,9 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
       {order && <>
         <h1>{t("أهلاً", "Hello")}, {order.buyerName}</h1>
         <span className="wb-badge" data-testid="buyer-status">{statusText[order.status] || order.status}</span>
-        <p className="wb-muted">{t("احتفظ بهذا الرابط؛ من يملكه يمكنه الوصول إلى طلبك.", "Keep this link private; anyone who has it can access your order.")}</p>
+        {order.orderCode && <p style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "baseline" }}>
+          <span className="wb-muted">{t("رقم الطلب", "Order ID")}</span><span className="wb-code" data-testid="buyer-order-code">{order.orderCode}</span></p>}
+        <p className="wb-muted">{t("احتفظ بهذا الرابط ورقم الطلب؛ من يملكهما يمكنه الوصول إلى طلبك.", "Keep this link and order ID private; anyone who has them can access your order.")}</p>
         <div className="wb-columns">
           <section className="wb-stack">
             <Furniture3D model={order.spec} lang={lang} dimensions={order.spec.dimensions}
@@ -168,7 +178,8 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
                 <dt>{t("التوصيل", "Delivery")}</dt><dd>{order.spec.deliveryCity}, {order.spec.deliveryCountry}</dd>
                 <dt>{t("الموعد المطلوب", "Wanted by")}</dt><dd>{order.spec.wantedBy || "—"}</dd>
               </dl>
-              {order.spec.bedroomPieces?.length ? <p>{order.spec.bedroomPieces.map(piece => labels[piece] || piece).join(" • ")}</p> : null}
+              {order.spec.pieces?.length ? <p>{order.spec.pieces.map(piece => categoryLabel(piece, lang)).join(" • ")}</p>
+                : order.spec.bedroomPieces?.length ? <p>{order.spec.bedroomPieces.map(piece => labels[piece] || piece).join(" • ")}</p> : null}
               {order.spec.notes && <p>{order.spec.notes}</p>}
             </section>
             {upfrontDeposit && <section className="wb-card" data-testid="upfront-deposit">
@@ -196,7 +207,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
               </>}
             </section>}
             {["deposit_paid", "in_production", "ready", "delivered", "closed"].includes(order.status) && <section className="wb-card">
-              {order.payments.some(p => p.type === "deposit" && p.state === "held") && <p className="wb-badge">{t("العربون مسجّل كمحتجز حتى التسليم", "Deposit recorded as held until delivery")}</p>}
+              {order.payments.some(p => p.type === "deposit" && p.state === "held") && <p className="wb-badge">{t("العربون محفوظ في حساب ضمان أخشاب حتى التسليم", "Deposit held in Akshab escrow until delivery")}</p>}
               <h2>{t("تقدم التصنيع", "Production progress")}</h2>
               {order.updates.length ? <ol className="wb-timeline">{order.updates.map((update, index) => <li key={update.id || index}>
                 <strong>{labels[update.stage] || statusText[update.stage] || update.stage}</strong><p>{update.note}</p>
@@ -218,6 +229,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
           </section>
           <aside className="wb-stack">
             {order.estimate && !quote && <EstimateCard estimate={order.estimate} lang={lang} saved />}
+            <EscrowSteps lang={lang} stage={escrowStage(order)} />
             {quote && <section className="wb-card"><h2>{t("عرض السعر", "Your quote")}</h2>
               <p className="wb-total">{money(quote.totalDisplay, quote.displayCurrency)}</p>
               <p className="wb-muted">{t("عملة العرض للاسترشاد فقط. الدفع يُحصّل بالجنيه المصري.", "Display currency is for reference only. Payments are charged in Egyptian pounds.")}</p>
@@ -233,7 +245,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
               {order.status === "quoted" && <>
                 {quoteExpired && <p className="wb-error">{t("انتهت صلاحية السعر. اطلب عرضاً جديداً من الورشة.", "This quote expired. Request a new quote from the workshop.")}</p>}
                 {!validQuote && <p className="wb-error">{t("بيانات السعر غير مكتملة. تواصل مع الورشة.", "Quote details are incomplete. Contact the workshop.")}</p>}
-                {paymentsUnavailable && <p className="wb-notice">{t("الدفع الإلكتروني غير متصل. يمكنك مراجعة العرض لكن لن يتم تحصيل أي مبلغ. حالات «محتجز/محوّل» في النسخة الحالية هي سجلات وليست ضماناً مالياً من المزوّد.", "Online payments are not connected. You can review the quote, but no money will be collected. Held/released labels are bookkeeping, not provider escrow.")}</p>}
+                {paymentsUnavailable && <p className="wb-notice">{t("الدفع الإلكتروني غير متصل. يمكنك مراجعة العرض لكن لن يتم تحصيل أي مبلغ. ", "Online payments are not connected. You can review the quote, but no money will be collected.")}</p>}
                 <button className="wb-primary" disabled={pending || quoteExpired || !validQuote || !order.designApproved || paymentsUnavailable} onClick={() => action("pay", { type: "deposit" })} data-testid="pay-deposit">{demo ? t("محاكاة دفع العربون", "Simulate deposit payment") : t("دفع العربون", "Pay deposit")}</button>
               </>}
             </section>}

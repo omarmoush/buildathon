@@ -5,13 +5,13 @@ export type Language = "ar" | "en";
 export type Dimensions = SharedDimensions;
 export type Model = { glbUrl?: string; usdzUrl?: string; thumbnailUrl?: string };
 export type CatalogItem = Model & {
-  id: string; name: string; nameAr?: string; defaultDims: Dimensions;
+  id: string; category?: string; custom?: boolean; name: string; nameAr?: string; defaultDims: Dimensions;
   woods: string[]; finishes: string[];
 };
 export type Spec = OrderSpec;
 export type Generation = MeshyTask & { demo?: boolean };
 export type BuyerOrder = {
-  id: string; buyerName: string; buyerPhone?: string; status: string;
+  id: string; orderCode?: string | null; buyerName: string; buyerPhone?: string; status: string;
   designApproved: boolean; spec: Spec;
   workshopName?: string; ownerPhone?: string; designChangeNote?: string | null;
   paymentMode?: "unavailable" | "live";

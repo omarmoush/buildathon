@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
-import { db, money, notify } from "./db";
+import { db, money, newOrderCode, notify } from "./db";
 import type { Currency, OrderSpec, OrderStatus } from "../shared/contract";
 import { DEMO_FX } from "./routes/fx";
 
@@ -28,10 +28,10 @@ export async function seed(): Promise<void> {
         thumbnailUrl: `/uploads/demo-reference-${index + 1}.svg`,
       };
       await db.prepare(`INSERT INTO orders (id,owner_id,buyer_name,buyer_phone,buyer_country,title,
-        description,dimensions,spec_json,status,design_approved,design_approved_at,token,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(sample.id, "reda", sample.buyer, sample.phone,
+        description,dimensions,spec_json,status,design_approved,design_approved_at,token,code,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(sample.id, "reda", sample.buyer, sample.phone,
         sample.country, sample.title, spec.notes, "200 × 60 × 180 cm", JSON.stringify(spec), sample.status,
-        1, createdAt, randomBytes(32).toString("hex"), createdAt);
+        1, createdAt, randomBytes(32).toString("hex"), newOrderCode(), createdAt);
       await db.prepare("INSERT INTO order_images VALUES (?,?,?,?,?)")
         .run(randomUUID(), sample.id, spec.thumbnailUrl, "design", createdAt);
       const totalEgp = money((sample.materials + sample.labor) * 1.2);

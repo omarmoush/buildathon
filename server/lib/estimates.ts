@@ -12,6 +12,10 @@ const prices: Record<string, { price: number; label: string; labelAr: string; qu
   dresser: { price: 11000, label: "Dresser", labelAr: "تسريحة" },
   "dining-set": { price: 26000, label: "Dining set", labelAr: "غرفة سفرة" },
   "living-room": { price: 28000, label: "Living room furniture", labelAr: "أثاث غرفة معيشة" },
+  "dining-table": { price: 15000, label: "Dining table", labelAr: "ترابيزة سفرة" },
+  "dining-chair": { price: 2400, label: "Dining chair", labelAr: "كرسي سفرة" },
+  sofa: { price: 22000, label: "Sofa", labelAr: "كنبة" },
+  "coffee-table": { price: 6000, label: "Coffee table", labelAr: "ترابيزة قهوة" },
   other: { price: 16000, label: "Custom furniture piece", labelAr: "قطعة أثاث خاصة" },
 };
 const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
@@ -26,15 +30,19 @@ export function calculateEstimate(spec: EstimateSpec): FurnitureEstimate {
   const area = ({ w, d, h }: typeof base) => w * d + w * h + d * h;
   const sizeFactor = spec.pieceSource === "catalog" ? 1 : Math.max(.4, Math.min(6, area(spec.dimensions) / area(base)));
   let keys: string[];
-  if (spec.productType === "bedroom-set") {
+  const multiple = spec.pieces?.length ? spec.pieces.length > 1 : spec.productType === "bedroom-set";
+  if (spec.pieces?.length) {
+    // Multi-select quiz: one line per chosen category; the selected catalog item sets the bed type.
+    keys = [...new Set(spec.pieces)].map(piece => piece === "bed" ? (item?.id.startsWith("bed-") ? item.id : "bed-oak") : prices[piece] ? piece : "other");
+  } else if (spec.productType === "bedroom-set") {
     const pieces = [...new Set(spec.bedroomPieces?.length ? spec.bedroomPieces : ["bed", "nightstands", "wardrobe", "dresser"])];
     keys = pieces.map(key => key === "bed" ? (item?.id.startsWith("bed-") ? item.id : "bed-oak") : key);
   } else keys = [item?.id ?? (prices[spec.productType] ? spec.productType : "other")];
   const items = keys.map(key => {
     const rate = prices[key] ?? prices.other!;
     const quantity = rate.quantity ?? 1;
-    const matchesSelected = key === item?.id || (key === "nightstands" && item?.id === "nightstand");
-    const scale = spec.productType !== "bedroom-set" || matchesSelected ? sizeFactor : 1;
+    const matchesSelected = key === item?.id || item?.category === key || (key === "nightstands" && item?.id === "nightstand");
+    const scale = !multiple || matchesSelected ? sizeFactor : 1;
     return { key, label: rate.label, labelAr: rate.labelAr, quantity,
       amountEgp: round(rate.price * quantity * woodFactor * finishFactor * sourceFactor * scale) };
   });

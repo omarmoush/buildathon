@@ -6,8 +6,9 @@ import { useFurnitureGeneration } from "./useFurnitureGeneration";
 import Furniture3D from "../buyer/Furniture3D";
 import { EstimateCard, EstimatePreview, usePaymentsConnected } from "./EstimateCard";
 import type { FurnitureEstimate } from "@workspace/api-client-react";
-import { Link } from "wouter";
 import type { CatalogItem, Language, Spec } from "./types";
+import { BrandHeader, EscrowSteps } from "./BrandHeader";
+import { artUrl, CATEGORIES, categoryLabel, FINISH_LABELS, label, PRODUCT_PIECES, productTypeFor, recolor, STYLES, swatch, WOOD_LABELS } from "./furniture";
 import "./buyer.css";
 
 const today = () => {
@@ -23,10 +24,11 @@ export default function QuizPage() {
   const [spec, setSpec] = useState<Spec>(() => {
     const product = entry.get("product");
     const source = entry.get("source");
+    const pieces = product && PRODUCT_PIECES[product] ? [...PRODUCT_PIECES[product]] : [...(initialSpec.pieces || [])];
     return { ...initialSpec, dimensions: { ...initialSpec.dimensions }, style: [...initialSpec.style],
-      productType: product && ["bedroom-set", "wardrobe", "dining-set", "living-room", "other"].includes(product) ? product : initialSpec.productType,
+      productType: pieces.length ? productTypeFor(pieces) : product && PRODUCT_PIECES[product] ? product : initialSpec.productType,
       pieceSource: source === "customized" || source === "generated" ? source : "catalog",
-      bedroomPieces: product && product !== "bedroom-set" ? undefined : [...(initialSpec.bedroomPieces || [])],
+      bedroomPieces: undefined, pieces,
     };
   });
   const [catalog, setCatalog] = useState<CatalogItem[]>(demo ? demoCatalog : []);
@@ -39,7 +41,7 @@ export default function QuizPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [success, setSuccess] = useState<{ orderId: string; token: string; estimate?: FurnitureEstimate | null }>();
+  const [success, setSuccess] = useState<{ orderId: string; token: string; orderCode?: string; estimate?: FurnitureEstimate | null }>();
   const [copied, setCopied] = useState(false);
   const submitting = useRef(false);
   const generation = useFurnitureGeneration();
@@ -47,7 +49,7 @@ export default function QuizPage() {
   const patch = (values: Partial<Spec>) => setSpec(old => ({ ...old, ...values }));
   const heading = useRef<HTMLHeadingElement>(null);
   const steps = [
-    t("نوع الأثاث", "Product type"), t("الطراز", "Style"), t("اختيار القطعة", "Your piece"),
+    t("القطع المطلوبة", "Pieces you need"), t("الطراز", "Style"), t("اختيار القطعة", "Your piece"),
     t("المقاسات والخامات", "Size & materials"), t("التوصيل", "Delivery"), t("التواصل", "Contact"),
   ];
   useEffect(() => {
@@ -62,17 +64,27 @@ export default function QuizPage() {
     prefilled.current = true;
     const selected = catalog.find(item => item.id === entry.get("item"));
     if (selected && entry.get("source") !== "generated") {
-      setSpec(old => ({ ...old, catalogItemId: selected.id, glbUrl: selected.glbUrl, usdzUrl: selected.usdzUrl,
-        thumbnailUrl: selected.thumbnailUrl, dimensions: { ...selected.defaultDims }, wood: selected.woods[0], finish: selected.finishes[0] }));
+      setSpec(old => {
+        const pieces = selected.category && !old.pieces?.includes(selected.category) ? [selected.category, ...(old.pieces || [])] : old.pieces || [];
+        const colors = { wood: selected.woods[0], finish: selected.finishes[0] };
+        return { ...old, catalogItemId: selected.id, glbUrl: recolor(selected.glbUrl, colors), usdzUrl: selected.usdzUrl,
+          thumbnailUrl: recolor(selected.thumbnailUrl, colors), dimensions: { ...selected.defaultDims }, ...colors,
+          pieces, productType: productTypeFor(pieces) };
+      });
     }
   }, [catalog, entry]);
   useEffect(() => { localStorage.setItem("wasta-lang", lang); }, [lang]);
   useEffect(() => { heading.current?.focus(); }, [step, success]);
   const item = catalog.find(item => item.id === spec.catalogItemId);
+  // Changing wood or finish recolours the saved picture and 3D model, so the order shows the chosen material.
+  const setMaterial = (values: { wood?: string; finish?: string }) => {
+    const colors = { wood: values.wood ?? spec.wood, finish: values.finish ?? spec.finish };
+    patch({ ...colors, glbUrl: recolor(spec.glbUrl, colors), thumbnailUrl: recolor(spec.thumbnailUrl, colors) });
+  };
   const selectFallback = () => {
     const fallback = catalog.find(item => item.id === "bed-oak") || demoCatalog[0];
     generation.clear();
-    patch({ pieceSource: "catalog", catalogItemId: fallback.id, glbUrl: fallback.glbUrl,
+    patch({ pieceSource: "catalog", catalogItemId: fallback.id, glbUrl: recolor(fallback.glbUrl, { wood: fallback.woods[0], finish: fallback.finishes[0] }),
       usdzUrl: undefined, thumbnailUrl: fallback.thumbnailUrl, dimensions: { ...fallback.defaultDims },
       wood: fallback.woods[0], finish: fallback.finishes[0], prompt: undefined, generationTaskId: undefined });
   };
@@ -83,7 +95,7 @@ export default function QuizPage() {
       thumbnailUrl: generation.result.thumbnailUrl, generationTaskId: generation.taskId });
   };
   const validate = (index: number): string => {
-    if (index === 0 && spec.productType === "bedroom-set" && !spec.bedroomPieces?.length) return t("اختر قطعة واحدة على الأقل.", "Choose at least one bedroom piece.");
+    if (index === 0 && !spec.pieces?.length) return t("اختر قطعة واحدة على الأقل.", "Choose at least one piece.");
     if (index === 1 && !spec.style.length) return t("اختر طرازاً واحداً أو اثنين.", "Choose one or two styles.");
     if (index === 2 && !spec.glbUrl && !(spec.pieceSource === "generated" && generation.pending && generation.taskId)) return t("اختر قطعة، أو ابدأ توليد نموذج.", "Choose a piece or start generating a model.");
     if (index === 3 && Object.values(spec.dimensions).some(n => !Number.isFinite(n) || n < 10 || n > 600)) return t("أدخل أبعاداً بين ١٠ و٦٠٠ سم.", "Enter dimensions between 10 and 600 cm.");
@@ -106,7 +118,7 @@ export default function QuizPage() {
         sessionStorage.setItem("wasta-demo-order", JSON.stringify(order));
         setSuccess({ orderId: "demo-person2", token: "demo-person2" });
       } else {
-        const result = await api<{ orderId: string; token: string; estimate?: FurnitureEstimate | null }>("/api/orders", {
+        const result = await api<{ orderId: string; token: string; orderCode?: string; estimate?: FurnitureEstimate | null }>("/api/orders", {
           buyerName: name.trim(), buyerPhone: phone.trim(), buyerCountry: spec.deliveryCountry, spec: cleanSpec,
         });
         if (!result.token || !result.orderId) throw new Error("Invalid order response");
@@ -146,14 +158,18 @@ export default function QuizPage() {
   }
   const magicLink = success ? `${location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/b/${encodeURIComponent(success.token)}${demo ? "?demo=1" : ""}` : "";
   return <div className="wb" dir={lang === "ar" ? "rtl" : "ltr"} lang={lang}>
-    <header><Link href="/" className="wb-link"><strong>{t("وسطى", "Wasta")}</strong></Link><span>{t("ورشة رضا • دمياط", "Reda's workshop • Damietta")}</span>
-      <button onClick={() => setLang(lang === "ar" ? "en" : "ar")} aria-label={t("Switch to English", "التبديل للعربية")}>{lang === "ar" ? "English" : "العربية"}</button></header>
+    <BrandHeader lang={lang} onToggleLanguage={() => setLang(lang === "ar" ? "en" : "ar")} meta={t("ورشة رضا • دمياط", "Reda's workshop • Damietta")} />
     <main>
       {demo && <p className="wb-notice">{t("عرض تجريبي فقط — لا يُرسل طلباً حقيقياً ولا يحصّل أموالاً.", "Demo only — no real order is submitted and no money is collected.")}</p>}
       {success ? <section className="wb-card">
         <span className="wb-badge">{t("تم استلام الطلب", "Request received")}</span>
-        <h1 ref={heading} tabIndex={-1}>{t("احتفظ برابط طلبك", "Keep your private order link")}</h1>
-        <p>{t("راجع التصميم والسعر وتابع التصنيع من هذا الرابط دون إنشاء حساب. لا تشاركه إلا مع من تثق به.", "Review the design and quote and follow production without an account. Share this private link only with people you trust.")}</p>
+        <h1 ref={heading} tabIndex={-1}>{t("احتفظ برقم طلبك ورابطه", "Keep your order ID and link")}</h1>
+        {success.orderCode && <div className="wb-notice">
+          <p style={{ margin: 0 }}>{t("رقم الطلب", "Order ID")}</p>
+          <p className="wb-code" data-testid="order-code" style={{ margin: "4px 0" }}>{success.orderCode}</p>
+          <p className="wb-muted" style={{ margin: 0 }}>{t("ادخل به من الصفحة الرئيسية («تابع طلبك») لمعرفة الحالة في أي وقت.", "Use it on the home page (“Track your order”) to check the status any time.")}</p>
+        </div>}
+        <p>{t("راجع التصميم والسعر وتابع التصنيع من الرابط أو رقم الطلب دون إنشاء حساب. لا تشاركهما إلا مع من تثق به.", "Review the design and quote and follow production with the link or order ID, no account needed. Share them only with people you trust.")}</p>
         {success.estimate && <EstimateCard estimate={success.estimate} lang={lang} saved />}
         {paymentsConnected && !demo && success.estimate && success.estimate.depositEgp > 0 &&
           <button className="wb-primary" disabled={busy} onClick={payDeposit} data-testid="quiz-pay-deposit">{t("ادفع العربون عبر Paymob", "Pay deposit with Paymob")}</button>}
@@ -161,30 +177,47 @@ export default function QuizPage() {
         <p className="wb-notice">{paymentsConnected
           ? t("ادفع العربون عبر Paymob لتأكيد طلبك. يمكنك أيضاً الدفع لاحقاً من رابط طلبك الخاص.", "Pay the deposit through Paymob to confirm your request. You can also pay later from your private order link.")
           : t("طلبك ينتظر مراجعة الورشة. ربط Paymob قيد الانتظار، ولا يوجد أي مبلغ محصّل أو مستحق الدفع الآن.", "Your request is awaiting workshop review. Paymob setup is pending; no money was collected or is payable now.")}</p>
+        <EscrowSteps lang={lang} stage={0} />
         <a className="wb-link wb-primary" href={magicLink}>{t("افتح طلبك", "Open your order")}</a>
         <label>{t("رابط الطلب الخاص", "Private order link")}<input readOnly value={magicLink} dir="ltr" onFocus={e => e.target.select()} /></label>
         <button onClick={() => navigator.clipboard.writeText(magicLink).then(() => setCopied(true)).catch(() => setError(t("انسخ الرابط من الحقل أعلاه.", "Copy the link from the field above.")))}>{copied ? t("تم النسخ", "Copied") : t("نسخ الرابط", "Copy link")}</button>
       </section> : <>
         <p className="wb-muted">{t("أثاث مصنوع لك، خطوة بخطوة", "Furniture made for you, step by step")}</p>
-        <p>{t("الخطوة", "Step")} {step + 1} / 6</p>
-        <progress max={6} value={step + 1} aria-label={t("تقدم الطلب", "Quiz progress")} />
+        <span className="wb-eyebrow">{t("الخطوة", "Step")} {step + 1} / 6</span>
+        <div className="wb-steps" role="progressbar" aria-valuemin={1} aria-valuemax={6} aria-valuenow={step + 1} aria-label={t("تقدم الطلب", "Quiz progress")}>
+          {steps.map((_, index) => <span key={index} className={index < step ? "done" : index === step ? "current" : undefined} />)}
+        </div>
         <h1 ref={heading} tabIndex={-1}>{steps[step]}</h1>
         {step === 0 && <div className="wb-stack">
-          <div className="wb-grid">{[["bedroom-set", t("غرفة نوم", "Bedroom set")], ["dining-set", t("غرفة سفرة", "Dining set")], ["wardrobe", t("دولاب", "Wardrobe")], ["living-room", t("غرفة معيشة", "Living room")], ["other", t("قطعة أخرى", "Other")]].map(([value, label]) =>
-            <button className="wb-card" key={value} aria-pressed={spec.productType === value} onClick={() => { if (spec.productType !== value) patch({ productType: value, bedroomPieces: value === "bedroom-set" ? ["bed", "nightstands", "wardrobe", "dresser"] : undefined, catalogItemId: undefined, glbUrl: undefined, usdzUrl: undefined, thumbnailUrl: undefined, generationTaskId: undefined, prompt: undefined }); }}><strong>{label}</strong></button>)}</div>
-          {spec.productType === "bedroom-set" && <section className="wb-card"><h2>{t("محتويات غرفة النوم", "Your bedroom set")}</h2>
-            <p>{t("اختر القطع المطلوبة. المقاسات والنموذج في الخطوات التالية تخص القطعة الرئيسية؛ اكتب تفاصيل باقي القطع في الملاحظات.", "Choose included pieces. The next steps size and preview the main piece; add other pieces' dimensions in notes.")}</p>
-            {[["bed", t("سرير مزدوج", "Double bed")], ["nightstands", t("٢ كومودينو", "2 nightstands")], ["wardrobe", t("دولاب ملابس", "Wardrobe")], ["dresser", t("تسريحة", "Dresser")]].map(([value, label]) =>
-              <label key={value} className="wb-check"><input type="checkbox" checked={spec.bedroomPieces?.includes(value) || false}
-                onChange={() => patch({ bedroomPieces: spec.bedroomPieces?.includes(value) ? spec.bedroomPieces.filter(p => p !== value) : [...(spec.bedroomPieces || []), value] })} />{label}</label>)}</section>}
+          <p className="wb-muted">{t("اختر كل القطع التي تحتاجها، من فئة واحدة أو أكثر.", "Pick every piece you need, from one category or several.")}</p>
+          <div className="wb-grid wb-grid-4">{CATEGORIES.map(category => {
+            const chosen = spec.pieces?.includes(category.id) || false;
+            return <button className="wb-card wb-pick" key={category.id} aria-pressed={chosen} data-testid={`piece-${category.id}`} onClick={() => {
+              const pieces = chosen ? (spec.pieces || []).filter(piece => piece !== category.id) : [...(spec.pieces || []), category.id];
+              const keepItem = !!spec.catalogItemId && pieces.includes(catalog.find(item => item.id === spec.catalogItemId)?.category ?? "");
+              patch({ pieces, productType: productTypeFor(pieces), bedroomPieces: undefined,
+                ...(keepItem ? {} : { catalogItemId: undefined, glbUrl: spec.pieceSource === "generated" ? spec.glbUrl : undefined, usdzUrl: undefined, thumbnailUrl: undefined }) });
+            }}>
+              <span className="wb-tick" aria-hidden="true">{chosen ? "✓" : ""}</span>
+              <img src={artUrl(category.id, { style: spec.style[0], wood: spec.wood, finish: spec.finish })} alt="" loading="lazy" />
+              <strong>{category[lang]}</strong>
+            </button>;
+          })}</div>
         </div>}
         {step === 1 && <>
-          <p>{t("اختر طرازاً واحداً أو اثنين", "Pick up to two styles")}</p>
-          <div className="wb-grid">{[["modern", t("مودرن", "Modern"), "photo-1616486338812-3dadae4b4ace"], ["classic", t("كلاسيك", "Classic"), "photo-1615874959474-d609969a20ed"], ["japandi", t("ياباني بسيط", "Japandi"), "photo-1617325247661-675ab4b64ae2"], ["scandinavian", t("اسكندنافي", "Scandinavian"), "photo-1616486029423-aaa4789e8c9a"]].map(([value, label, photo]) =>
-            <button className="wb-card" key={value} aria-pressed={spec.style.includes(value)} disabled={!spec.style.includes(value) && spec.style.length >= 2}
-              onClick={() => patch({ style: spec.style.includes(value) ? spec.style.filter(s => s !== value) : [...spec.style, value] })}>
-              <img src={`https://images.unsplash.com/${photo}?auto=format&fit=crop&w=500&q=70`} alt="" /><strong>{label}</strong>
-            </button>)}</div>
+          <p>{t("اختر طرازاً واحداً أو اثنين. الصور تعرض القطع التي اخترتها بكل طراز.", "Pick up to two styles. Each picture shows the pieces you chose in that style.")}</p>
+          <div className="wb-grid wb-grid-4">{STYLES.map(style => {
+            const pieces = spec.pieces?.length ? spec.pieces : ["dresser"];
+            return <button className="wb-card wb-pick" key={style.id} aria-pressed={spec.style.includes(style.id)} disabled={!spec.style.includes(style.id) && spec.style.length >= 2}
+              data-testid={`style-${style.id}`} onClick={() => patch({ style: spec.style.includes(style.id) ? spec.style.filter(s => s !== style.id) : [...spec.style, style.id] })}>
+              <span className="wb-tick" aria-hidden="true">{spec.style.includes(style.id) ? "✓" : ""}</span>
+              <img src={artUrl(pieces[0]!, { style: style.id, wood: spec.wood, finish: spec.finish })} alt={`${categoryLabel(pieces[0]!, lang)} · ${style[lang]}`} />
+              {pieces.length > 1 && <span style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(pieces.length - 1, 3)}, 1fr)`, gap: 6, marginBottom: 10 }}>
+                {pieces.slice(1, 4).map(piece => <img key={piece} src={artUrl(piece, { style: style.id, wood: spec.wood, finish: spec.finish })} alt={categoryLabel(piece, lang)} style={{ margin: 0, borderRadius: 8 }} />)}
+              </span>}
+              <strong>{style[lang]}</strong>
+            </button>;
+          })}</div>
           <label>{t("صورة مرجعية (اختياري)", "Reference photo (optional)")}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || demo || (spec.referencePhotos?.length || 0) >= 5} onChange={e => upload(e.target.files?.[0])} /></label>
           {uploading && <p role="status">{t("جارٍ رفع الصورة…", "Uploading photo…")}</p>}
           {spec.referencePhotos?.map(url => <img key={url} src={url} alt={t("صورتك المرجعية", "Your reference photo")} width={100} />)}
@@ -199,12 +232,25 @@ export default function QuizPage() {
             {spec.pieceSource === "catalog" && <p className="wb-notice">{t("هذه مقاسات وخامات القطعة الجاهزة. لتغييرها ارجع واختر «عدّل قطعة».", "These are the catalog dimensions and materials. Go back and choose Customize to change them.")}</p>}
             <div className="wb-three">{(["w", "d", "h"] as const).map((key, index) => <label key={key}>{[t("العرض (سم)", "Width (cm)"), t("العمق (سم)", "Depth (cm)"), t("الارتفاع (سم)", "Height (cm)")][index]}
               <input type="number" inputMode="decimal" min={10} max={600} disabled={spec.pieceSource === "catalog"} value={spec.dimensions[key] || ""} onChange={e => patch({ dimensions: { ...spec.dimensions, [key]: Number(e.target.value) } })} /></label>)}</div>
-            <label>{t("الخشب", "Wood")}<select disabled={spec.pieceSource === "catalog"} value={spec.wood} onChange={e => patch({ wood: e.target.value })}>{(item?.woods || ["oak", "beech", "walnut", "pine"]).map(value => <option key={value} value={value}>{({ oak: t("بلوط", "Oak"), beech: t("زان", "Beech"), walnut: t("جوز", "Walnut"), pine: t("صنوبر", "Pine") } as Record<string, string>)[value] || value}</option>)}</select></label>
-            <label>{t("التشطيب", "Finish")}<select disabled={spec.pieceSource === "catalog"} value={spec.finish} onChange={e => patch({ finish: e.target.value })}>{(item?.finishes || ["natural", "matte", "white", "walnut"]).map(value => <option key={value} value={value}>{({ natural: t("طبيعي", "Natural"), matte: t("مطفي", "Matte"), white: t("أبيض", "White"), walnut: t("لون الجوز", "Walnut stain") } as Record<string, string>)[value] || value}</option>)}</select></label>
+            <div role="group" aria-label={t("الخشب", "Wood")}><p style={{ fontWeight: 650, marginBottom: 6 }}>{t("الخشب", "Wood")}</p>
+              <div className="wb-swatches">{(item?.woods || ["oak", "beech", "walnut", "pine"]).map(value =>
+                <button key={value} type="button" aria-pressed={spec.wood === value} disabled={spec.pieceSource === "catalog"} data-testid={`wood-${value}`} onClick={() => setMaterial({ wood: value })}>
+                  <i style={{ background: swatch(value) }} />{label(WOOD_LABELS, value, lang)}</button>)}</div></div>
+            <div role="group" aria-label={t("التشطيب", "Finish")}><p style={{ fontWeight: 650, margin: "16px 0 6px" }}>{t("التشطيب", "Finish")}</p>
+              <div className="wb-swatches">{(item?.finishes || ["natural", "matte", "white", "walnut"]).map(value =>
+                <button key={value} type="button" aria-pressed={spec.finish === value} disabled={spec.pieceSource === "catalog"} data-testid={`finish-${value}`} onClick={() => setMaterial({ finish: value })}>
+                  <i style={{ background: swatch(spec.wood, value) }} />{label(FINISH_LABELS, value, lang)}</button>)}</div></div>
             <label>{t("ميزانية تقريبية بالجنيه المصري", "Approximate budget in EGP")}<select value={spec.budgetRange} onChange={e => patch({ budgetRange: e.target.value })}><option value="15000-30000">15,000–30,000 EGP</option><option value="30000-60000">30,000–60,000 EGP</option><option value="60000-100000">60,000–100,000 EGP</option><option value="100000+">100,000+ EGP</option></select></label>
             <label>{t("ملاحظات ومقاسات باقي القطع", "Notes & other pieces' dimensions")}<textarea maxLength={2000} value={spec.notes} onChange={e => patch({ notes: e.target.value })} /></label>
           </section>
-          <Furniture3D model={spec} dimensions={spec.dimensions} baseDimensions={item?.defaultDims} lang={lang} />
+          <div className="wb-stack">
+            <figure className="wb-card" style={{ margin: 0 }}>
+              <img data-testid="material-preview" src={spec.thumbnailUrl && !recolor(spec.thumbnailUrl, {}) ? spec.thumbnailUrl
+                : artUrl(item?.category || spec.pieces?.[0] || "dresser", { style: spec.style[0], wood: spec.wood, finish: spec.finish })} alt="" />
+              <figcaption className="wb-muted">{label(WOOD_LABELS, spec.wood, lang)} · {label(FINISH_LABELS, spec.finish, lang)}</figcaption>
+            </figure>
+            <Furniture3D model={spec} dimensions={spec.dimensions} baseDimensions={item?.defaultDims} lang={lang} />
+          </div>
         </div>}
         {step === 4 && <section className="wb-card">
           <label>{t("دولة التوصيل", "Delivery country")}<select value={spec.deliveryCountry} onChange={e => patch({ deliveryCountry: e.target.value })}><option value="SA">{t("السعودية", "Saudi Arabia")}</option><option value="EG">{t("مصر", "Egypt")}</option><option value="AE">{t("الإمارات", "United Arab Emirates")}</option><option value="other">{t("دولة أخرى", "Other country")}</option></select></label>
