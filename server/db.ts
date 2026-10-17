@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { paymentsEnabled } from "./lib/paymob-config";
 import type { Order, OrderStatus, OrderSpec, Quote, Payment, ProgressUpdate, OrderImage, Notification, FurnitureEstimate, OrderReview } from "../shared/contract";
 
 // Both index.ts and bundled dist/index.js resolve to the same server directory.
@@ -161,7 +162,7 @@ export function getOrder(identifier: string, byToken = false) {
     ownerName: row.owner_name, ownerPhone: row.owner_phone, workshopName: row.workshop_name,
     title: row.title, description: row.description, dimensions: row.dimensions, magicToken: row.token,
     designApprovedAt: row.design_approved_at, designChangeNote: row.design_change_note, progress: updates,
-    paymentMode: "unavailable" as const,
+    paymentMode: paymentsEnabled() ? "live" as const : "unavailable" as const,
     depositReviewPending: row.status === "deposit_paid" && hasDeposit && review?.decision !== "accepted",
   };
 }

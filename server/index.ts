@@ -16,6 +16,7 @@ import { paymobRouter } from "./routes/paymob";
 import { uploadsRouter } from "./routes/uploads";
 import { fxRouter } from "./routes/fx";
 import { estimatesRouter } from "./routes/estimates";
+import { paymobConfig } from "./lib/paymob-config";
 
 export const logger = pino({
   redact: ["req.headers.authorization", "req.headers.cookie", "res.headers.set-cookie"],
@@ -36,7 +37,10 @@ app.use((_req, res, next) => { res.setHeader("X-Content-Type-Options", "nosniff"
 app.use(express.json({ limit: "12mb" }), cookieParser());
 const demoImages = path.join(projectDirectory, "artifacts/api-server/uploads");
 app.use(["/uploads", "/api/uploads"], express.static(uploadDirectory), express.static(demoImages));
-app.get("/api/healthz", (_req, res) => { res.json({ status: "ok", database: "sqlite", payments: "unavailable" }); });
+app.get("/api/healthz", (_req, res) => {
+  const paymob = paymobConfig();
+  res.json({ status: "ok", database: "sqlite", payments: paymob ? `paymob-${paymob.mode}` : "unavailable" });
+});
 app.use("/api", fxRouter, ordersRouter, quotesRouter, paymentsRouter, uploadsRouter, paymobRouter, estimatesRouter);
 
 // Person 2 retains ownership. New route files are mounted on restart, never rewritten.

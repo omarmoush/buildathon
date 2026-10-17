@@ -49,3 +49,7 @@ Thumbs.db
 .local/
 /server/data/
 /uploads/
+
+# Local secrets
+.env
+.env.local
