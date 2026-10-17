@@ -26,12 +26,15 @@ Wasta helps Egyptian workshops manage custom furniture orders and share progress
 ## Where things live
 
 - `artifacts/wasta/src/App.tsx` — owner and buyer experience, routes, and Arabic/English interface
+- `artifacts/wasta/src/quiz/`, `buyer/` — public quiz and buyer magic-link screens, mounted by the active frontend
+- `artifacts/wasta/src/quiz/INTEGRATION.md` — contributor wiring, shared flow and remaining payment/storage limitations
 - `server/index.ts` — active Express entrypoint, run by the API artifact
 - `server/db.ts`, `server/seed.ts` — SQLite schema, transitions, serialization, and seed data
 - `server/routes/` — active order, quote, upload, FX, and payment-boundary routes
 - `shared/contract.ts` — supplied three-contributor API/type contract
 - `server/README.md` — backend handoff and current payment limitation
-- `client/src/App.tsx` — contributor route shell, not the existing web artifact entrypoint
+- `client/src/App.tsx` — re-exports the active web artifact App so there is only one route tree
+- `server/routes/catalog.ts`, `meshy.ts` — active-server entries reusing Person 2's existing catalog/Meshy implementation
 - `uploads/` — locally uploaded images; `artifacts/api-server/uploads/` supplies bundled demo images
 - `lib/api-spec/openapi.yaml` — previous frontend contract, not renamed during contributor handoff
 
@@ -42,6 +45,8 @@ Wasta helps Egyptian workshops manage custom furniture orders and share progress
 - Quotes store their exchange rate at send time. The displayed demo rates are editable before the quote is locked.
 - User-uploaded images and SQLite are local to this MVP service; the previous PostgreSQL database was left untouched to avoid deleting prior data.
 - The shared contract uses `requested`, not `draft`, and `depositPercent` is a fraction (0.5 = 50%). Read-only legacy field aliases remain while frontend contributors adapt.
+- Optional quiz bedroom pieces, reference photo URLs and Meshy task IDs are persisted in the existing spec JSON. Owner and buyer read the same order; no second order store is introduced.
+- The active order response includes `paymentMode: "unavailable"`; the buyer UI disables checkout while that boundary remains unconfigured. Local `?demo=1` screens do not modify server payment states.
 
 ## Product
 

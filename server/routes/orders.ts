@@ -77,6 +77,9 @@ const specSchema = z.object({
   budgetRange: z.string().max(200).default(""), deliveryCountry: z.string().max(100).default(""),
   deliveryCity: z.string().max(100).default(""), wantedBy: z.string().max(100).default(""),
   notes: z.string().max(10000).default(""),
+  referencePhotos: z.array(z.string().max(2000).regex(/^\/(?:api\/)?uploads\/[a-f0-9-]+\.(?:jpg|png|webp|gif)$/)).max(5).optional(),
+  bedroomPieces: z.array(z.enum(["bed", "nightstands", "wardrobe", "dresser"])).max(4).optional(),
+  generationTaskId: z.string().max(1000).optional(),
 });
 ordersRouter.post("/orders", rateLimit("create-order", 40, 3600000), (req, res) => {
   const legacy = !req.body?.spec && typeof req.body?.title === "string";
@@ -98,6 +101,10 @@ ordersRouter.post("/orders", rateLimit("create-order", 40, 3600000), (req, res) 
     notify(id, "A new custom order was requested.");
     if (data.spec.thumbnailUrl) db.prepare("INSERT INTO order_images VALUES (?,?,?,?,?)")
       .run(randomUUID(), id, data.spec.thumbnailUrl, "reference", new Date().toISOString());
+    for (const url of new Set(data.spec.referencePhotos ?? [])) {
+      db.prepare("INSERT INTO order_images VALUES (?,?,?,?,?)")
+        .run(randomUUID(), id, url, "reference", new Date().toISOString());
+    }
   })();
   res.status(201).json(legacy ? { ...getOrder(id), orderId: id, token } : { orderId: id, token });
 });

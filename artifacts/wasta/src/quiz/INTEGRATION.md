@@ -1,113 +1,93 @@
-# Person 2 handoff
+# Wasta contributor integration
 
-Only Person 2's modules are changed. This repository uses `artifacts/wasta/src`
-instead of `client/src`, and `artifacts/api-server/src` instead of `server`.
-Do not merge this as a standalone finished deployment: Person 1 must wire the
-shared entry points and implement the agreed public order API.
+## Active application
 
-## Person 1: shared frontend entry
+- Frontend: `artifacts/wasta/src/App.tsx`. The contributor shell in
+  `client/src/App.tsx` re-exports this same application instead of maintaining
+  a separate placeholder route tree.
+- Backend: `server/index.ts`, SQLite via Person 1's server. The old
+  `artifacts/api-server/src/routes/wasta.ts` PostgreSQL implementation is not
+  the active backend and has not been rewritten.
+- Shared wire types: `shared/contract.ts`. Quiz specs use `OrderSpec` directly.
+- `/quiz` and `/w/reda` render `QuizPage`; `/b/:token` renders `BuyerPage`.
+  Existing `/owner`, `/owner/orders/:id`, `/orders/:id`, and owner tools remain.
 
-In `artifacts/wasta/src/App.tsx`, import:
+## Connected flow
 
-```tsx
-import { QuizPage } from "./quiz";
-import { BuyerPage as PublicBuyerPage } from "./buyer";
-```
+1. Buyer selects bedroom pieces, styles, catalog/customized/generated piece,
+   dimensions/materials, delivery and contact details. The quiz submits the
+   agreed public `POST /api/orders`, which returns `{orderId, token}`.
+2. Person 1 persists the spec in the existing SQLite `spec_json` field. Optional
+   bedroom pieces, uploaded reference photos and generation task ID are now
+   accepted and preserved. Reference photos also enter the owner's image list.
+3. New requests appear in the existing owner dashboard. It refreshes every
+   15 seconds; owner detail refreshes every 10 seconds.
+4. Owner can send the selected 3D design directly for review with
+   `POST /api/orders/:id/start-design`, or use the existing image-design form.
+5. Buyer sees the same model/spec and the workshop's latest design images,
+   then approves or requests changes through Person 1's public buyer routes.
+6. Owner's existing quote builder is unlocked after approval. Existing FX tools
+   are retained. `SA` and `AE` country codes now select the correct reference
+   currencies and WhatsApp prefixes. Quotes retain the locked rate.
+7. Buyer sees quote amounts in EGP and reference currency, expiry, progress,
+   images and delivery actions from the same order and ledger.
 
-Inside the existing `Switch`, register `/quiz` and `/w/reda` with `QuizPage`,
-and replace the `/b/:token` component with `PublicBuyerPage`. Keep owner routes
-and the owner's existing implementation unchanged.
+## Catalog, Meshy and AR
 
-## Person 1: server entry
+Person 1's backend auto-loads `server/routes/catalog.ts` and `meshy.ts`.
+These thin contributor-owned entry points re-export Person 2's existing route
+implementations in `artifacts/api-server/src/routes/`, so there is one catalog,
+Meshy client and local asset generator.
 
-The new Express routers contain `/catalog` and `/meshy` prefixes and belong
-under the existing `/api` mount:
+The five locally authored demo GLBs and thumbnails are served under
+`/api/catalog/fallback/` and `/api/catalog/thumbnail/`. They do not require
+Meshy credits or third-party model downloads.
 
-```ts
-import catalogRouter from "./catalog";
-import meshyRouter from "./meshy";
-router.use(catalogRouter);
-router.use(meshyRouter);
-```
+Quiz, buyer and owner now reuse one `Furniture3D` component. Customized models
+use width/height/depth scale consistently in all three views. The component
+omits an unscaled catalog USDZ when scaling, allowing model-viewer to generate
+the transformed iOS asset. Wood/finish choices are specifications, not a
+photorealistic material preview.
 
-No package or database changes are needed for these two routers. Local,
-deterministic GLBs and thumbnails are served from
-`/api/catalog/fallback/:id.glb` and `/api/catalog/thumbnail/:id.svg`. This keeps
-fallback assets within Person 2's ownership instead of editing shared public
-folders. They are simple demo geometry, not production furniture drawings.
+Live generation is preview-only, asynchronous and server-side. The quiz remains
+navigable during generation; submission requires acceptance or a fallback.
+The prompt and task ID survive a tab reload in sessionStorage. Generation
+failure or a wait of 90 seconds exposes the prepared model; it is also
+available immediately. No key or `MESHY_DEMO=true` produces a labelled prepared
+demo, never an unlabelled claim that the model came from the prompt.
 
-## Contract gaps in the current repository
+Generated task mapping remains process-local with 24-hour expiry. Server
+restarts invalidate task-backed asset URLs; Meshy may delete source models.
+Durable task/asset storage and distributed abuse protection remain production
+requirements. The runtime loads pinned model-viewer 4.1.0 from unpkg; real
+AR placement requires HTTPS and a supported physical phone.
 
-The current `POST /api/orders` is owner-authenticated and takes
-`title/description/dimensions`, not the public `{buyerName,buyerPhone,buyerCountry,spec}`.
-It must return `{orderId,token}` for this quiz. Persist the whole spec including
-`pieceSource`, model URLs, dimensions and material choices. Optional additions:
-`referencePhotos`, `bedroomPieces`, `generationTaskId`.
+## Payments: explicit remaining limitation
 
-The current buyer API is `/api/buyer/:token` and uses generated legacy types.
-Implement the specified `/api/b/:token` endpoints rather than silently mixing
-contracts. The new page expects the `BuyerOrder` boundary in `types.ts`,
-including `spec`, `designApproved`, `updates`, quote EGP amounts and locked `fxRate`.
+The active SQLite backend does **not** simulate a successful real payment.
+No supported checkout provider is connected. Person 1's Paymob boundary fails
+with `503 PAYMENTS_UNAVAILABLE`, with no fake URL, public settlement bypass,
+or payment-state change.
 
-Required mutations:
-- `POST /api/b/:token/approve-design`
-- `POST /api/b/:token/request-changes` with `{comment}`
-- `POST /api/b/:token/pay` with `{type:"deposit"}` returning `{checkoutUrl}`
-- `POST /api/b/:token/confirm-delivery`, optionally returning `{checkoutUrl}` for balance payment
-- `POST /api/uploads` public multipart field `file` (the current upload is owner-only JSON).
+The server exposes `paymentMode: "unavailable"` as additive response metadata.
+The buyer screen labels this limitation and disables deposit/delivery-payment
+actions. Its `?demo=1` mode remains an explicitly local UI simulation and never
+changes real server orders. Held/released badges are ledger states, not a
+promise of provider escrow.
 
-Payments currently simulate immediate settlement. Real Paymob integration,
-webhook verification, durable order/spec persistence and server-enforced
-status transitions belong to Person 1. This UI never marks a live payment
-successful merely because checkout returned; it re-fetches server state.
-Checkout redirects accept HTTPS Paymob domains only.
+Real checkout, verified provider callbacks, settlement and production payment
+configuration are not implemented by this integration. Connecting the screens
+does not make those financial operations available.
 
-## Furniture3D reuse and operation
+## Other deployment limits
 
-There are no Furniture3D sources in this GitHub revision. `Furniture3D.tsx`,
-`useFurnitureGeneration.ts` and the Meshy router adapt the supplied Furniture3D
-reference's viewer, task polling, real-scale AR attributes and server-only API
-client. Quiz and buyer use the same viewer; no duplicate 3D implementation.
-The buildathon requires **preview only**, so refine is intentionally omitted.
+SQLite and uploads are local to the current service. They need durable storage
+before production replacements or scaling. The previous PostgreSQL database
+and historical orders were not migrated or deleted.
 
-The pinned model-viewer runtime loads from unpkg. Production CSP must permit
-that runtime and the model fetches. Android/iOS AR needs a real supported phone
-and HTTPS; browser emulation does not establish real-world placement.
-Customized previews scale X/Y/Z as width/height/depth. They omit the catalog's
-USDZ so iOS generates an asset from the transformed model rather than opening
-an unscaled USDZ. Wood/finish choices are saved; preview materials are illustrative.
+## Verification
 
-Meshy stays server-only. No key or `MESHY_DEMO=true` enables a visibly labelled
-prepared-model demo. With a key, a Generate click spends credits. Never test a
-paid request without approval. Rate limiting is in-memory, three starts per
-minute per IP, with 200 tasks and 24-hour expiry. Task handles are process-local;
-server restarts invalidate generated model links. Persist tasks/assets and add
-durable abuse controls before public production use.
-
-Asset proxy accepts only Meshy HTTPS assets, disallows redirects and refreshes
-signed upstream URLs on read. Meshy may delete source assets later; durable
-storage belongs in the shared backend. Local catalog models remain available.
-
-## Explicit demo
-
-- `/quiz?demo=1`: uses a visibly labelled local catalog and saves a mock order
-  in sessionStorage. No live order submission or payment.
-- `/b/demo-person2?demo=1`: mock buyer page with a status selector for the demo.
-  Mock orders are tab-local; do not share demo magic links as real orders.
-- Normal URLs **never** silently turn a failed live action into a mock success.
-- Generation continues while moving through later quiz steps; submit waits for
-  “Keep this piece” or the prepared fallback. A slow/failure fallback is offered
-  at 90 seconds and is also available immediately.
-
-## Verification status
-
-Testing was stopped at the user's request. Before that request, frontend
-typechecking, the existing frontend production build, isolated owned-backend
-typechecking, local GLB validation and demo-route checks passed. Browser flow
-checks were not completed. The shared entry points are deliberately unchanged,
-so the existing production build does not yet bundle these new screens.
-No real Meshy credits, real Paymob transactions, database migrations, deployment,
-or physical-phone AR checks were performed. No shared dependencies or lockfile
-were changed. The shared Express lockfile currently includes `proxy-addr@2.0.7`,
-which was blocked by the package firewall; isolated route checks used Express
-5.3.0 instead. Person 1 owns any shared dependency update.
+No tests, build, runtime smoke checks, paid generations, payment transactions,
+database migrations or deployments were run for this integration, per the
+user's instruction not to test. This is a source-level integration, not a
+claim of verified end-to-end runtime behavior.
