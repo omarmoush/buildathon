@@ -11,11 +11,28 @@
 - `client/src/App.tsx` is the requested contributor route shell, **not** a replacement for the existing web artifact entrypoint.
 - Person 2 routes are auto-mounted at restart when `server/routes/catalog.ts` and `meshy.ts` exist. Export an Express router as default, `catalogRouter`/`meshyRouter`, or `router`. Define full resource routes such as `/catalog` within the router; `/api` is mounted here. Until then those endpoints return 501.
 
-## Payment limitation
+## Secrets
 
-Paymob was requested but is not available through the supported payment setup used here. No real gateway is integrated and no provider credentials are read. `createCheckout(order, type)` in `routes/paymob.ts` deliberately throws `503 PAYMENTS_UNAVAILABLE`; it never returns a fake checkout URL.
+Set these as Replit Secrets, or copy `.env.example` to a repo-root `.env` for local runs (`dev` and `start` load it with `--env-file-if-exists`). `.env` is git-ignored; never commit keys.
 
-The internal settlement function in `routes/payments.ts` is transaction-safe and idempotent, and is tested with synthetic records. A future supported adapter must validate provider authenticity, reference, merchant, EGP amount, currency, and payment type before invoking it. There is no public settlement endpoint, webhook bypass, or redirect-based payment success. “Held” and “released” are bookkeeping labels, not provider escrow or transfer operations.
+| Variable | Used for |
+| --- | --- |
+| `SESSION_SECRET` | Owner login sessions (required) |
+| `MESHY_API_KEY` | Real Meshy text-to-3D previews. Without it, or with `MESHY_DEMO=true`, generation returns the demo catalog model |
+| `PAYMOB_SECRET_KEY`, `PAYMOB_PUBLIC_KEY` | Paymob Intention API and Unified Checkout. `egy_sk_test_…` keys run in test mode |
+| `PAYMOB_INTEGRATION_ID` | The card integration to charge. It must belong to the same Paymob account and mode as the secret key |
+| `PAYMOB_HMAC_SECRET` | Verifies Paymob webhooks and return redirects |
+| `PUBLIC_BASE_URL` | Optional. Public origin Paymob calls back to; defaults to the request's origin |
+
+## Payments (Paymob)
+
+Payments are enabled only when the four `PAYMOB_*` checkout variables are set; otherwise `createCheckout` throws `503 PAYMENTS_UNAVAILABLE` and buyers see payments as unavailable. `/api/healthz` reports `paymob-test`, `paymob-live` or `unavailable`.
+
+1. `POST /api/b/:token/pay` creates a Paymob intention for the exact EGP deposit or balance and returns the Unified Checkout URL. The pending payment stores Paymob's order id as `paymob_ref`. A provider error returns `502 PAYMENT_PROVIDER_ERROR` and records nothing.
+2. Paymob posts the result to `POST /api/paymob/webhook?hmac=…` (set the dashboard's transaction processed callback to `https://<host>/api/paymob/webhook`). It also redirects the buyer to `GET /api/b/:token/payment-return?…&hmac=…`, which works on localhost where webhooks cannot arrive.
+3. Both are verified with HMAC-SHA512 over Paymob's 20 transaction fields. Only a verified, successful, non-pending, non-voided EGP transaction on the configured integration settles through `settleVerifiedPayment`, which re-checks the reference and amount against the locked quote. Forged, tampered, declined and replayed callbacks change nothing.
+
+Orders do not collect an email, so checkout sends the placeholder `buyer@wasta.invalid` that Paymob requires. “Held” and “released” are bookkeeping labels, not provider escrow or transfer operations. A buyer who abandons checkout cannot start a second one for the same payment yet ("A checkout is already pending").
 
 ## Verification
 

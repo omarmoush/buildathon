@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx index.ts",
+    "dev": "tsx --env-file-if-exists=../.env index.ts",
     "build": "esbuild index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js",
-    "start": "tsx index.ts",
+    "start": "tsx --env-file-if-exists=../.env index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/backend.test.ts"
   },
