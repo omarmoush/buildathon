@@ -127,19 +127,25 @@ function Problem({ onRetry, message }: { onRetry: () => void; message?: string }
 }
 
 function OwnerHome() {
+  const session = useGetOwnerSession({ query: { retry: false, queryKey: getGetOwnerSessionQueryKey() } });
+  if (session.isLoading) return <LoadingScreen />;
+  if (session.data) return <OwnerDashboard owner={session.data} />;
+  return <OwnerLogin />;
+}
+function OwnerDashboard({ owner }: { owner: { name: string; workshopName: string } }) {
+  const queryClient = useQueryClient();
+  const logout = useLogoutOwner();
+  return <DashboardPage owner={owner} onLogout={() => logout.mutate(undefined, { onSuccess: () => { queryClient.removeQueries({ queryKey: getGetOwnerSessionQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetOwnerSessionQueryKey() }); } })} />;
+}
+function OwnerLogin() {
   const { lang } = useLanguage();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const session = useGetOwnerSession({ query: { retry: false, queryKey: getGetOwnerSessionQueryKey() } });
   const login = useLoginOwner();
   const [phone, setPhone] = useState('01001234567');
   const [pin, setPin] = useState('1234');
   const [error, setError] = useState('');
   const [showPin, setShowPin] = useState(false);
-  const logout = useLogoutOwner();
-
-  if (session.isLoading) return <LoadingScreen />;
-  if (session.data) return <DashboardPage owner={session.data} onLogout={() => logout.mutate(undefined, { onSuccess: () => { queryClient.removeQueries({ queryKey: getGetOwnerSessionQueryKey() }); session.refetch(); } })} />;
 
   const submit = (e: FormEvent) => {
     e.preventDefault(); setError('');
