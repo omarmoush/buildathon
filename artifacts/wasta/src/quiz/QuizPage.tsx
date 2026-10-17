@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError } from "./api";
+import { api, ApiError, openPaymobCheckout } from "./api";
 import { demoCatalog, demoOrder, initialSpec } from "./demo";
 import PieceStep, { GenerationPanel } from "./PieceStep";
 import { useFurnitureGeneration } from "./useFurnitureGeneration";
@@ -118,6 +118,17 @@ export default function QuizPage() {
         : t("لم نتلق تأكيداً للطلب. لا تكرر الإرسال إذا كان قد وصل للورشة؛ تحقّق معها أولاً.", "No order confirmation was received. Check with the workshop before retrying to avoid a duplicate."));
     } finally { submitting.current = false; setBusy(false); }
   }
+  async function payDeposit() {
+    if (!success || demo || submitting.current) return;
+    submitting.current = true; setBusy(true); setError("");
+    try {
+      const result = await api<{ checkoutUrl?: string }>(`/api/b/${encodeURIComponent(success.token)}/pay`, { type: "deposit" });
+      openPaymobCheckout(result.checkoutUrl);
+    } catch {
+      setError(t("تعذّر فتح صفحة الدفع. لم يتم تحصيل أي مبلغ. يمكنك الدفع لاحقاً من رابط طلبك.", "Could not open Paymob checkout. Nothing was charged. You can pay later from your order link."));
+      submitting.current = false; setBusy(false);
+    }
+  }
   async function upload(file?: File) {
     if (!file) return;
     if ((spec.referencePhotos?.length || 0) >= 5) { setError(t("يمكنك إرفاق ٥ صور كحد أقصى.", "You can attach up to five photos.")); return; }
@@ -144,8 +155,11 @@ export default function QuizPage() {
         <h1 ref={heading} tabIndex={-1}>{t("احتفظ برابط طلبك", "Keep your private order link")}</h1>
         <p>{t("راجع التصميم والسعر وتابع التصنيع من هذا الرابط دون إنشاء حساب. لا تشاركه إلا مع من تثق به.", "Review the design and quote and follow production without an account. Share this private link only with people you trust.")}</p>
         {success.estimate && <EstimateCard estimate={success.estimate} lang={lang} saved />}
+        {paymentsConnected && !demo && success.estimate && success.estimate.depositEgp > 0 &&
+          <button className="wb-primary" disabled={busy} onClick={payDeposit} data-testid="quiz-pay-deposit">{t("ادفع العربون عبر Paymob", "Pay deposit with Paymob")}</button>}
+        {error && <p role="alert" className="wb-error">{error}</p>}
         <p className="wb-notice">{paymentsConnected
-          ? t("طلبك ينتظر مراجعة الورشة. لا يوجد أي مبلغ مستحق الآن، وستدفع العربون عبر Paymob من رابط طلبك بعد أن ترسل الورشة عرض السعر.", "Your request is awaiting workshop review. Nothing is payable yet; you'll pay the deposit through Paymob from your order link once the workshop sends a quote.")
+          ? t("ادفع العربون عبر Paymob لتأكيد طلبك. يمكنك أيضاً الدفع لاحقاً من رابط طلبك الخاص.", "Pay the deposit through Paymob to confirm your request. You can also pay later from your private order link.")
           : t("طلبك ينتظر مراجعة الورشة. ربط Paymob قيد الانتظار، ولا يوجد أي مبلغ محصّل أو مستحق الدفع الآن.", "Your request is awaiting workshop review. Paymob setup is pending; no money was collected or is payable now.")}</p>
         <a className="wb-link wb-primary" href={magicLink}>{t("افتح طلبك", "Open your order")}</a>
         <label>{t("رابط الطلب الخاص", "Private order link")}<input readOnly value={magicLink} dir="ltr" onFocus={e => e.target.select()} /></label>

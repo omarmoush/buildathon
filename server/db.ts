@@ -20,13 +20,19 @@ export class ApiError extends Error {
 }
 export const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 const nextStatuses: Record<OrderStatus, OrderStatus[]> = {
-  requested: ["design_review", "cancelled"],
-  design_review: ["quoted", "cancelled"], quoted: ["deposit_paid", "expired", "cancelled"],
+  // An upfront deposit (paid on the saved estimate right after the quiz) moves a request straight to deposit_paid.
+  requested: ["design_review", "deposit_paid", "cancelled"],
+  design_review: ["quoted", "deposit_paid", "cancelled"], quoted: ["deposit_paid", "expired", "cancelled"],
   deposit_paid: ["in_production"], in_production: ["ready"],
   ready: ["delivered"], delivered: ["closed"], closed: [], expired: [], cancelled: [],
 };
 export function assertTransition(current: OrderStatus, next: OrderStatus): void {
   if (!nextStatuses[current]?.includes(next)) throw new ApiError(409, `Invalid order transition: ${current} -> ${next}`, "INVALID_TRANSITION");
+}
+/** What payments are charged against: the locked quote, or the saved estimate when the deposit is paid upfront. */
+export function payableTotals(order: { quote: { totalEgp: number; depositEgp: number } | null; estimate?: FurnitureEstimate | null }) {
+  const source = order.quote ?? order.estimate;
+  return source && source.depositEgp > 0 ? { totalEgp: source.totalEgp, depositEgp: source.depositEgp, upfront: !order.quote } : null;
 }
 export async function notify(orderId: string, message: string): Promise<void> {
   const statement = db.prepare("INSERT INTO notifications VALUES (?,?,?,?,?)");

@@ -25,7 +25,7 @@ export function EstimateCard({ estimate, lang, saved = false }: { estimate: Esti
     {estimate.pricingVersion !== "workshop-estimate" && <p className="wb-muted">{t("يعتمد على معدلات تخطيطية استرشادية، وليست أسعاراً معتمدة من الورشة أو الموردين.", "Based on illustrative planning rates, not approved workshop or supplier prices.")}</p>}
     <p className="wb-muted">{t("لا يشمل التوصيل والتركيب والضرائب والمراتب والإكسسوارات. راجع هذه البنود مع الورشة قبل قبول السعر النهائي.", "Excludes delivery, installation, taxes, mattresses and accessories. Confirm these with the workshop before accepting the final quote.")}</p>
     {paymentsConnected === false && <p className="wb-notice">{t("ربط Paymob قيد الانتظار. لن يتم تحصيل عربون أو تأكيد دفع في هذه المرحلة.", "Paymob setup is pending. No deposit will be collected or marked paid at this stage.")}</p>}
-    {paymentsConnected && <p className="wb-notice">{t("يُدفع العربون بأمان عبر Paymob بعد أن تؤكد الورشة السعر النهائي.", "The deposit is paid securely through Paymob after the workshop confirms the final quote.")}</p>}
+    {paymentsConnected && <p className="wb-notice">{t("يُدفع العربون بأمان عبر Paymob.", "The deposit is paid securely through Paymob.")}</p>}
   </section>;
 }
 

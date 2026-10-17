@@ -26,7 +26,7 @@ estimatesRouter.post("/estimates", rateLimit("estimates", 120, 60000), async (re
 // modifies a locked quote, payment amount, approval or provider state.
 estimatesRouter.post("/orders/:id/estimate", requireOwner, async (req, res) => {
   const order = await ownedOrder(String(req.params.id), res.locals.ownerId);
-  if (!["requested", "design_review"].includes(order.status) || order.quote)
+  if (!["requested", "design_review"].includes(order.status) || order.quote || order.payments.some(payment => payment.type === "deposit"))
     throw new ApiError(409, "An estimate cannot change after a final quote or payment.");
   const body = req.body ?? {};
   const data = z.object({

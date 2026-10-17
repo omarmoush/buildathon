@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { ApiError, db, getOrder, money, notify, transition } from "../db";
+import { ApiError, db, getOrder, money, notify, payableTotals, transition } from "../db";
 import { createCheckout, settleTransaction, transactionFromRedirect, verifyTransaction } from "./paymob";
 import { paymobConfig } from "../lib/paymob-config";
 import type { Payment, PaymentType } from "../../shared/contract";
@@ -10,16 +10,21 @@ export const paymentsRouter = Router();
 // Where Paymob sends the buyer back and posts webhooks. Webhooks need a public HTTPS URL.
 const publicBaseUrl = (req: Request) => (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
+// A deposit is paid on the locked quote, or upfront on the saved estimate before any quote exists.
+const payableStatuses = (type: PaymentType, upfront: boolean): string[] =>
+  type === "balance" ? ["ready"] : upfront ? ["requested", "design_review"] : ["quoted"];
+
 async function requestCheckout(token: string, type: PaymentType, baseUrl: string) {
   const order = await getOrder(token, true);
-  if (!order.quote) throw new ApiError(409, "The order has no quote.");
-  const expected = type === "deposit" ? "quoted" : "ready";
-  if (order.status !== expected) throw new ApiError(409, `A ${type} payment is not allowed in ${order.status}.`);
+  const totals = payableTotals(order);
+  if (!totals) throw new ApiError(409, "The order has no quote or estimate to pay against.");
+  if (!payableStatuses(type, totals.upfront).includes(order.status))
+    throw new ApiError(409, `A ${type} payment is not allowed in ${order.status}.`);
   const existing = order.payments.find(payment => payment.type === type);
   if (existing) throw new ApiError(409, existing.state === "pending" ? "A checkout is already pending." : "This payment has already been received.");
   if (type === "balance" && !order.payments.some(payment => payment.type === "deposit" && payment.state === "held"))
     throw new ApiError(409, "A held deposit is required before balance payment.");
-  const amountEgp = type === "deposit" ? order.quote.depositEgp : money(order.quote.totalEgp - order.quote.depositEgp);
+  const amountEgp = type === "deposit" ? totals.depositEgp : money(totals.totalEgp - totals.depositEgp);
   // The adapter must succeed before any pending payment is recorded.
   const checkout = await createCheckout(order, type, amountEgp, baseUrl);
   await db.prepare("INSERT INTO payments VALUES (?,?,?,?,?,?,?)").run(randomUUID(), order.id, type, amountEgp,
@@ -58,7 +63,7 @@ paymentsRouter.get("/b/:token/payment-return", async (req, res) => {
 /**
  * Internal-only settlement boundary. The Paymob adapter (routes/paymob.ts) verifies the
  * HMAC signature, success flags, currency and integration before calling; this re-checks
- * the reference and EGP amount against the locked quote.
+ * the reference and EGP amount against the locked quote (or the estimate, for an upfront deposit).
  * There is deliberately no public "mark paid" route or HMAC bypass.
  */
 export async function settleVerifiedPayment(paymentId: string, verifiedReference: string, amountEgp: number): Promise<void> {
@@ -70,11 +75,12 @@ export async function settleVerifiedPayment(paymentId: string, verifiedReference
       throw new ApiError(400, "Payment verification does not match the expected charge.");
     if (payment.state !== "pending") return; // Idempotent duplicate delivery of the same verified event.
     const order = await getOrder(payment.orderId);
-    if (!order.quote) throw new ApiError(409, "The order has no payable quote.");
-    const expectedAmount = payment.type === "deposit" ? order.quote.depositEgp : money(order.quote.totalEgp - order.quote.depositEgp);
-    if (payment.amountEgp !== expectedAmount) throw new ApiError(400, "Payment amount does not match the locked quote.");
+    const totals = payableTotals(order);
+    if (!totals) throw new ApiError(409, "The order has no payable quote or estimate.");
+    const expectedAmount = payment.type === "deposit" ? totals.depositEgp : money(totals.totalEgp - totals.depositEgp);
+    if (payment.amountEgp !== expectedAmount) throw new ApiError(400, "Payment amount does not match the locked quote or estimate.");
     if (payment.type === "deposit") {
-      if (order.status !== "quoted") throw new ApiError(409, "The order cannot receive a deposit now.");
+      if (!payableStatuses("deposit", totals.upfront).includes(order.status)) throw new ApiError(409, "The order cannot receive a deposit now.");
       await db.prepare("UPDATE payments SET state='held' WHERE id=?").run(payment.id);
       await transition(order.id, "deposit_paid", "The verified deposit was received and is recorded as held.");
     } else {
