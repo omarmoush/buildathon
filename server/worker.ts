@@ -3,7 +3,7 @@
 import { httpServerHandler } from "cloudflare:node";
 import type { RequestHandler } from "express";
 import { createApp, logger } from "./app";
-import { useDatabase } from "./db";
+import { ensureOrderCodes, useDatabase } from "./db";
 import { applySchema, d1Database, type D1Binding } from "./d1";
 import { seed } from "./seed";
 import { setUploadStore } from "./storage";
@@ -52,6 +52,7 @@ function setup(env: Env): Promise<void> {
     });
     await applySchema(env.DB);
     await seed();
+    await ensureOrderCodes();
   })().catch(error => { ready = undefined; throw error; });
   return ready;
 }

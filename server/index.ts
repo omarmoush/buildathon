@@ -6,7 +6,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, logger, safeRequestPath } from "./app";
-import { useDatabase } from "./db";
+import { ensureOrderCodes, useDatabase } from "./db";
 import { createDatabase } from "./sqlite";
 import { setUploadStore } from "./storage";
 import { seed } from "./seed";
@@ -40,6 +40,7 @@ export const app = createApp({
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await seed();
+  await ensureOrderCodes();
   const port = Number(process.env.PORT ?? 8080);
   const server = app.listen(port, "0.0.0.0", () => logger.info({ port, database: "sqlite" }, "Wasta backend listening"));
   const close = () => server.close(() => process.exit(0));

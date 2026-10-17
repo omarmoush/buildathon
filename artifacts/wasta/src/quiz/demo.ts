@@ -6,7 +6,7 @@ export const demoCatalog: CatalogItem[] = [
   ["dresser", "Six-drawer dresser", "تسريحة بستة أدراج", 140, 45, 85],
   ["wardrobe", "Three-door wardrobe", "دولاب بثلاثة أبواب", 180, 60, 220],
 ].map(([id, name, nameAr, w, d, h]) => ({
-  id: String(id), name: String(name), nameAr: String(nameAr),
+  id: String(id), category: String(id).startsWith("bed-") ? "bed" : String(id), name: String(name), nameAr: String(nameAr),
   defaultDims: { w: Number(w), d: Number(d), h: Number(h) },
   woods: ["oak", "beech", "walnut"], finishes: ["natural", "matte", "white"],
   glbUrl: `/api/catalog/fallback/${id}.glb`, thumbnailUrl: `/api/catalog/thumbnail/${id}.svg`,
@@ -15,7 +15,7 @@ export const initialSpec: Spec = {
   productType: "bedroom-set", style: [], pieceSource: "catalog",
   dimensions: { w: 180, d: 210, h: 105 }, wood: "oak", finish: "natural",
   budgetRange: "30000-60000", deliveryCountry: "SA", deliveryCity: "",
-  wantedBy: "", notes: "", bedroomPieces: ["bed", "nightstands", "wardrobe", "dresser"],
+  wantedBy: "", notes: "", pieces: ["bed", "nightstand", "wardrobe"],
 };
 export function demoOrder(): BuyerOrder {
   return {

@@ -1,5 +1,5 @@
 // Cloudflare backend: D1 behind the async Database interface.
-import { schemaStatements } from "./schema";
+import { isAppliedMigrationError, MIGRATIONS, schemaStatements } from "./schema";
 import type { Database } from "./sql";
 
 // The subset of the D1 binding used here (avoids depending on @cloudflare/workers-types).
@@ -31,4 +31,7 @@ export function d1Database(d1: D1Binding): Database {
 
 export async function applySchema(d1: D1Binding): Promise<void> {
   await d1.batch(schemaStatements().map(statement => d1.prepare(statement)));
+  for (const statement of MIGRATIONS) {
+    try { await d1.prepare(statement).run(); } catch (error) { if (!isAppliedMigrationError(error)) throw error; }
+  }
 }

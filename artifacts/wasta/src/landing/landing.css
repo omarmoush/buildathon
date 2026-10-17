@@ -63,4 +63,5 @@
 .wl-art{max-width:420px;border-radius:160px 160px 24px 24px}
 .wl-pay{padding:26px}.wl-sec{padding:50px 0}
 }
+@media(max-width:560px){.wl-hide-sm{display:none!important}.wl-logo{font-size:1.1rem}}
 @media(prefers-reduced-motion:reduce){.wl *{animation:none!important;transition:none!important}}

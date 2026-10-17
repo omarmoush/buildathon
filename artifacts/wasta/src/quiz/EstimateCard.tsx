@@ -15,7 +15,7 @@ export function EstimateCard({ estimate, lang, saved = false }: { estimate: Esti
     <p className="wb-muted">{saved ? t("هذا التقدير محفوظ مع طلبك.", "This estimate is saved with your order.") : t("يُعاد حساب التقدير على الخادم عند إرسال الطلب.", "The estimate is recalculated on the server when you submit.")} {t("ليس عرض سعر ملزماً. تؤكد الورشة التصميم والسعر النهائي أولاً.", "This is not a binding quote. The workshop confirms the design and final price first.")}</p>
     {estimate.pricingVersion !== "workshop-estimate" && <p className="wb-muted">{t("يعتمد على معدلات تخطيطية استرشادية، وليست أسعاراً معتمدة من الورشة أو الموردين.", "Based on illustrative planning rates, not approved workshop or supplier prices.")}</p>}
     <p className="wb-muted">{t("لا يشمل التوصيل والتركيب والضرائب والمراتب والإكسسوارات. راجع هذه البنود مع الورشة قبل قبول السعر النهائي.", "Excludes delivery, installation, taxes, mattresses and accessories. Confirm these with the workshop before accepting the final quote.")}</p>
-    <p className="wb-notice">{t("ربط Paymob قيد الانتظار. لن يتم تحصيل عربون أو تأكيد دفع في هذه المرحلة.", "Paymob setup is pending. No deposit will be collected or marked paid at this stage.")}</p>
+    <p className="wb-notice">{t("لا يوجد دفع الآن. بعد قبول السعر النهائي، يُدفع العربون لحساب ضمان أخشاب ويبقى محفوظاً حتى تؤكد الاستلام (محاكاة).", "Nothing is payable now. After you accept the final quote, the deposit goes to Akshab's escrow and stays there until you confirm delivery (simulated).")}</p>
   </section>;
 }
 
@@ -26,7 +26,7 @@ export function EstimatePreview({ spec, lang }: { spec: Spec; lang: Language }) 
   // the browser for this calculation and changes cannot show an older response.
   const input = JSON.stringify({ productType: spec.productType, pieceSource: spec.pieceSource,
     catalogItemId: spec.catalogItemId, dimensions: spec.dimensions, wood: spec.wood,
-    finish: spec.finish, bedroomPieces: spec.bedroomPieces });
+    finish: spec.finish, bedroomPieces: spec.bedroomPieces, pieces: spec.pieces });
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => {

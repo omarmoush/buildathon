@@ -29,6 +29,7 @@ import { BuyerPage as PublicBuyerPage } from '@/buyer';
 import { api as publicApi } from '@/quiz/api';
 import LandingPage from '@/landing/LandingPage';
 import { RequestReview, ReviewQueue } from '@/owner/RequestReview';
+import { CatalogManager, ProductPicker } from '@/owner/Products';
 
 type Language = 'ar' | 'en';
 const LanguageContext = createContext<{ lang: Language; setLang: (lang: Language) => void }>({ lang: 'ar', setLang: () => undefined });
@@ -50,6 +51,7 @@ const stageIndex: Record<string, number> = { requested: 0, draft: 0, design_revi
 const statusTone = (s: OrderStatus) => ['deposit_paid', 'in_production', 'closed'].includes(s) ? 'status-green' : ['design_review', 'quoted', 'ready'].includes(s) ? 'status-orange' : ['cancelled', 'expired'].includes(s) ? 'status-red' : 'status-gray';
 const money = (value?: number, currency = 'EGP') => `${new Intl.NumberFormat('en-US', { minimumFractionDigits: currency === 'EGP' ? 0 : 2, maximumFractionDigits: currency === 'EGP' ? 0 : 2 }).format(value || 0)} ${currency}`;
 const dateShort = (value: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
+const orderCodeOf = (order: Order) => (order as Order & { orderCode?: string | null }).orderCode ?? null;
 const buyerHref = (token: string) => `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/b/${encodeURIComponent(token)}`;
 const whatsappHref = (phone: string, message: string, country = 'Egypt') => {
   let digits = phone.replace(/\D/g, '');
@@ -76,8 +78,8 @@ const whatsappStatusMessage: Record<string, string> = {
   expired: 'انتهت صلاحية عرض السعر.',
   cancelled: 'تم إلغاء الطلب.',
 };
-const whatsappOrderMessage = (buyerName: string, title: string, status: string, link: string) =>
-  `مرحباً ${buyerName}، تحديث طلب "${title}": ${whatsappStatusMessage[status] || 'تحديث جديد على طلبك.'}\nرابط متابعة الطلب: ${link}`;
+const whatsappOrderMessage = (buyerName: string, title: string, status: string, link: string, code?: string | null) =>
+  `مرحباً ${buyerName}، تحديث طلب "${title}": ${whatsappStatusMessage[status] || 'تحديث جديد على طلبك.'}\nرابط متابعة الطلب: ${link}${code ? `\nرقم الطلب: ${code}` : ''}`;
 const demoFxRates: Record<Currency, number> = { EGP: 1, SAR: 13.1, AED: 13.35, USD: 48.5 };
 const suggestedCurrency = (country: string): Currency => {
   const normalized = country.toLowerCase();
@@ -93,9 +95,10 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
   return <label className="block"><span className="label">{label}</span>{children}{hint && <span className="block mt-1.5 text-xs text-muted-foreground">{hint}</span>}</label>;
 }
 function Logo({ small = false }: { small?: boolean }) {
+  const { lang } = useLanguage();
   return <div className="flex items-center gap-3" data-testid="text-wasta-brand">
     <div className={`grid place-items-center rounded-2xl bg-primary text-primary-foreground ${small ? 'h-9 w-9' : 'h-11 w-11'}`}><Hammer size={small ? 18 : 21} strokeWidth={2.1} /></div>
-    <div className="leading-tight"><div className="font-display text-xl font-extrabold tracking-tight">wasta<span className="text-accent">.</span></div>{!small && <div className="text-[10px] font-semibold tracking-[.18em] text-muted-foreground uppercase">workshop orders</div>}</div>
+    <div className="leading-tight"><div className="font-display text-xl font-extrabold tracking-tight">{lang === 'ar' ? 'أخشاب' : 'akshab'}<span className="text-accent">.</span></div>{!small && <div className="text-[10px] font-semibold tracking-[.18em] text-muted-foreground uppercase">workshop orders</div>}</div>
   </div>;
 }
 function LanguageToggle() {
@@ -231,7 +234,7 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
     <div className="page-enter page-pad mx-auto max-w-6xl px-5 py-8 md:px-10 md:py-11">
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div><p className="text-sm font-semibold text-accent">{t('Your workshop', 'ورشتك')}</p><h1 className="font-display mt-1 text-3xl font-extrabold tracking-tight md:text-4xl">{t('Good to see you', 'أهلاً بيك')}{owner.name ? `، ${owner.name}` : ''}</h1><p className="mt-2 text-sm text-muted-foreground">{t('A clear view of every order in motion.', 'نظرة واضحة على كل طلب شغال.')}</p></div>
-        <div className="flex flex-wrap gap-2"><Link href="/w/reda" className="btn btn-outline" data-testid="link-buyer-quiz">{t('Buyer request form', 'نموذج طلب العميل')}</Link><Link href="/orders/new" className="btn btn-primary" data-testid="link-new-order"><Plus size={18} />{t('New custom order', 'طلب خاص جديد')}</Link></div>
+        <div className="flex flex-wrap gap-2"><Link href="/owner/catalog" className="btn btn-outline" data-testid="link-catalog">{t('Catalog', 'الكتالوج')}</Link><Link href="/w/reda" className="btn btn-outline" data-testid="link-buyer-quiz">{t('Buyer request form', 'نموذج طلب العميل')}</Link><Link href="/orders/new" className="btn btn-primary" data-testid="link-new-order"><Plus size={18} />{t('New custom order', 'طلب خاص جديد')}</Link></div>
       </div>
       {dashboard.isLoading ? <div className="grid gap-4 md:grid-cols-3"><div className="skeleton h-32" /><div className="skeleton h-32" /><div className="skeleton h-32" /></div> : dashboard.isError ? <Problem onRetry={refresh} /> : <>
         <div className="grid gap-4 md:grid-cols-[1.1fr_1fr_1fr]">
@@ -239,7 +242,7 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
             <div className="flex items-start justify-between"><span className="text-sm font-semibold opacity-80">{t('Orders in progress', 'طلبات قيد التنفيذ')}</span><PackageCheck size={19} /></div>
             <p className="mt-6 font-display text-4xl font-extrabold" data-testid="text-open-orders">{dashboard.data?.openOrders ?? 0}</p><p className="mt-1 text-xs opacity-70">{t('Your active workshop list', 'طلبات الورشة النشطة')}</p>
           </div>
-          <div className="surface p-5 md:p-6"><div className="flex items-start justify-between text-muted-foreground"><span className="text-sm font-semibold">{t('Deposits collected', 'العربون المحصل')}</span><div className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-primary"><ArrowDownLeft size={17} /></div></div><p className="mt-5 font-display text-3xl font-extrabold" data-testid="text-deposits-collected">{money(dashboard.data?.depositsCollectedEgp)}</p><p className="mt-1 text-xs text-muted-foreground">{t('Held or released · simulated ledger', 'محفوظ أو مُحرّر · سجل تجريبي')}</p></div>
+          <div className="surface p-5 md:p-6"><div className="flex items-start justify-between text-muted-foreground"><span className="text-sm font-semibold">{t('Deposits collected', 'العربون المحصل')}</span><div className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-primary"><ArrowDownLeft size={17} /></div></div><p className="mt-5 font-display text-3xl font-extrabold" data-testid="text-deposits-collected">{money(dashboard.data?.depositsCollectedEgp)}</p><p className="mt-1 text-xs text-muted-foreground">{t('Held in Akshab escrow or released · simulated', 'في حساب ضمان أخشاب أو مُحرّر · محاكاة')}</p></div>
           <div className="surface p-5 md:p-6"><div className="flex items-start justify-between text-muted-foreground"><span className="text-sm font-semibold">{t('Balances to collect', 'المتبقي للتحصيل')}</span><div className="grid h-9 w-9 place-items-center rounded-xl bg-accent/15 text-accent"><Clock3 size={17} /></div></div><p className="mt-5 font-display text-3xl font-extrabold" data-testid="text-balances-due">{money(dashboard.data?.balancesDueEgp)}</p><p className="mt-1 text-xs text-muted-foreground">{t('Due at delivery', 'مستحق عند التسليم')}</p></div>
         </div>
         <div className="surface mt-4 flex flex-wrap items-center justify-between gap-2 p-5">
@@ -279,7 +282,7 @@ function OrderRow({ order, risk }: { order: Order; risk: ReturnType<typeof quote
   const { lang } = useLanguage();
   return <Link href={`/orders/${order.id}`} data-testid={`link-order-${order.id}`} className="clickable-row flex items-center gap-4 border-b border-border px-5 py-4 text-inherit no-underline last:border-0 md:px-6">
     <div className="hidden h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-secondary sm:block">{order.images?.[0]?.url ? <img src={order.images[0].url} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-primary"><FileImage size={19} /></div>}</div>
-    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-semibold">{order.title}</h3><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0] || order.status}</span>{needsAttention(order) && <span className="status-pill status-orange" data-testid="badge-new-request">{t('New request · start here', 'طلب جديد · ابدأ هنا')}</span>}</div><p className="mt-1 truncate text-xs text-muted-foreground">{order.buyerName} · {order.buyerCountry} · {dateShort(order.createdAt)}</p>{risk?.belowTarget && <div className="mt-2"><MarginWarning lang={lang} margin={risk.marginPercent} /></div>}</div>
+    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-semibold">{order.title}</h3><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0] || order.status}</span>{needsAttention(order) && <span className="status-pill status-orange" data-testid="badge-new-request">{t('New request · start here', 'طلب جديد · ابدأ هنا')}</span>}</div><p className="mt-1 truncate text-xs text-muted-foreground">{orderCodeOf(order) && <span dir="ltr" className="font-semibold">{orderCodeOf(order)} · </span>}{order.buyerName} · {order.buyerCountry} · {dateShort(order.createdAt)}</p>{risk?.belowTarget && <div className="mt-2"><MarginWarning lang={lang} margin={risk.marginPercent} /></div>}</div>
     <div className="hidden text-end sm:block"><p className="font-semibold">{order.quote ? money(order.quote.totalDisplay, order.quote.displayCurrency) : t('Awaiting quote', 'بانتظار السعر')}</p><p className="mt-1 text-xs text-muted-foreground">{order.progress?.length || 0} {t('updates', 'تحديثات')}</p></div>
     <ArrowLeft className="shrink-0 text-muted-foreground rtl:rotate-180" size={18} />
   </Link>;
@@ -306,13 +309,15 @@ function NewOrderPage() {
   const addImage = useAddOrderImage();
   const [values, setValues] = useState<OrderInput>({ buyerName: '', buyerPhone: '', buyerCountry: '', title: '', description: '', dimensions: '' });
   const [files, setFiles] = useState<File[]>([]);
+  const [productIds, setProductIds] = useState<string[]>([]);
   const [error, setError] = useState('');
   const update = (key: keyof OrderInput, value: string) => setValues(prev => ({ ...prev, [key]: value }));
   const onFiles = (e: ChangeEvent<HTMLInputElement>) => setFiles(Array.from(e.target.files || []));
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault(); setError('');
     try {
-      const order = await createOrder.mutateAsync({ data: values });
+      // productIds is an Akshab extension of the order input: the server attaches those catalog products.
+      const order = await createOrder.mutateAsync({ data: { ...values, productIds } as OrderInput });
       for (const file of files) {
         const dataUrl = await fileToDataUrl(file);
         const saved = await upload.mutateAsync({ data: { fileName: file.name, dataUrl } });
@@ -339,9 +344,22 @@ function NewOrderPage() {
         </Field>
       </div>
       {files.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{files.map(f => <span key={`${f.name}-${f.size}`} className="rounded-full bg-secondary px-3 py-1 text-xs">{f.name}</span>)}</div>}
+      <div className="mt-8 border-t border-border pt-6">
+        <div className="mb-4 flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-secondary text-primary"><Plus size={18} /></div><div><h2 className="font-display font-bold">{t('Products', 'المنتجات')}</h2><p className="text-xs text-muted-foreground">{t('Choose catalog products for this buyer, or add a new product to your catalog.', 'اختر منتجات من الكتالوج لهذا العميل، أو أضف منتجاً جديداً لكتالوجك.')}</p></div></div>
+        <ProductPicker lang={lang} selected={productIds} onChange={ids => { setProductIds(ids); }} />
+      </div>
       {error && <p role="alert" className="mt-5 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       <div className="mt-8 flex flex-col-reverse justify-between gap-3 border-t border-border pt-5 sm:flex-row sm:items-center"><span className="text-xs text-muted-foreground">{t('A private buyer link is created automatically.', 'سيتم إنشاء رابط خاص بالعميل تلقائياً.')}</span><Button type="submit" className="btn-primary" disabled={createOrder.isPending || upload.isPending || addImage.isPending} data-testid="button-create-order">{createOrder.isPending || upload.isPending || addImage.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <Plus size={18} />}{t('Create order', 'إنشاء الطلب')}</Button></div>
     </form>
+  </div></AppFrame></OwnerGate>;
+}
+function CatalogPage() {
+  const t = useTranslation();
+  const { lang } = useLanguage();
+  return <OwnerGate><AppFrame><Header showNotifications /><div className="page-enter page-pad mx-auto max-w-5xl px-5 py-8 md:px-10 md:py-11">
+    <Link href="/owner" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('Back to orders', 'العودة للطلبات')}</Link>
+    <div className="mb-7"><p className="text-sm font-semibold text-accent">{t('Your products', 'منتجاتك')}</p><h1 className="font-display mt-1 text-3xl font-extrabold md:text-4xl">{t('Workshop catalog', 'كتالوج الورشة')}</h1></div>
+    <CatalogManager lang={lang} />
   </div></AppFrame></OwnerGate>;
 }
 function fileToDataUrl(file: File) {
@@ -441,10 +459,10 @@ function OrderDetailContent({ order }: { order: Order }) {
   return <AppFrame><Header showNotifications /><div className="page-enter page-pad mx-auto max-w-6xl px-5 py-7 md:px-10 md:py-10">
     <Link href="/owner" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('All orders', 'كل الطلبات')}</Link>
     <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
-      <div><div className="mb-2 flex flex-wrap items-center gap-2"><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0]}</span><span className="text-xs text-muted-foreground">#{order.id.slice(0, 8)}</span></div><h1 className="font-display text-3xl font-extrabold tracking-tight md:text-4xl">{order.title}</h1><p className="mt-2 text-sm text-muted-foreground">{order.buyerName} · {order.buyerCountry} · {t('Created', 'تاريخ الإنشاء')} {dateShort(order.createdAt)}</p></div>
+      <div><div className="mb-2 flex flex-wrap items-center gap-2"><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0]}</span><span className="text-xs font-semibold text-muted-foreground" dir="ltr" data-testid="text-order-code">{orderCodeOf(order) ?? `#${order.id.slice(0, 8)}`}</span></div><h1 className="font-display text-3xl font-extrabold tracking-tight md:text-4xl">{order.title}</h1><p className="mt-2 text-sm text-muted-foreground">{order.buyerName} · {order.buyerCountry} · {t('Created', 'تاريخ الإنشاء')} {dateShort(order.createdAt)}</p></div>
       <div className="flex flex-wrap gap-2">
         <Button className="btn-outline" onClick={copyLink} data-testid="button-copy-buyer-link">{shareCopied ? <Check size={17} /> : <Copy size={17} />}{shareCopied ? t('Link copied', 'تم نسخ الرابط') : t('Copy buyer link', 'نسخ رابط العميل')}</Button>
-        <a className="btn btn-soft" target="_blank" rel="noreferrer" href={whatsappHref(order.buyerPhone, whatsappOrderMessage(order.buyerName, order.title, order.status, tokenUrl), order.buyerCountry)} data-testid="link-whatsapp"><MessageCircle size={17} />{t('WhatsApp', 'واتساب')}</a>
+        <a className="btn btn-soft" target="_blank" rel="noreferrer" href={whatsappHref(order.buyerPhone, whatsappOrderMessage(order.buyerName, order.title, order.status, tokenUrl, orderCodeOf(order)), order.buyerCountry)} data-testid="link-whatsapp"><MessageCircle size={17} />{t('WhatsApp', 'واتساب')}</a>
       </div>
     </div>
     <div className="mt-7 grid gap-5 lg:grid-cols-[1.3fr_.7fr]">
@@ -476,10 +494,10 @@ function OrderDetailContent({ order }: { order: Order }) {
             setFormError('');
             markReady.mutate({ id: order.id }, { onSuccess: () => invalidateOrder(), onError: () => setFormError(tr('Could not mark this order ready. Please try again.', 'تعذر تأكيد الجاهزية. حاول مرة أخرى.')) });
           }} data-testid="button-mark-delivered">{markReady.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <PackageCheck size={17} />}{t('Mark ready for delivery', 'تأكيد الجاهزية للتسليم')}</Button>}
-          <div className="mt-5 rounded-xl bg-secondary/70 p-4"><p className="text-xs font-bold text-primary">{t('Private buyer page', 'صفحة العميل الخاصة')}</p><p className="mt-1 break-all text-xs leading-5 text-muted-foreground">{tokenUrl}</p><a href={tokenUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary no-underline">{t('Open buyer page', 'فتح صفحة العميل')}<ExternalLink size={13} /></a></div>
+          <div className="mt-5 rounded-xl bg-secondary/70 p-4"><p className="text-xs font-bold text-primary">{t('Private buyer page', 'صفحة العميل الخاصة')}</p>{orderCodeOf(order) && <p className="mt-1 text-xs text-muted-foreground">{t('Order ID for tracking', 'رقم الطلب للمتابعة')}: <strong dir="ltr" className="text-foreground">{orderCodeOf(order)}</strong></p>}<p className="mt-1 break-all text-xs leading-5 text-muted-foreground">{tokenUrl}</p><a href={tokenUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary no-underline">{t('Open buyer page', 'فتح صفحة العميل')}<ExternalLink size={13} /></a></div>
         </section>
         <section className="surface p-5 md:p-6"><h2 className="font-display text-lg font-bold">{t('Payments received', 'الدفعات المستلمة')}</h2>
-          {order.payments?.length ? <div className="mt-3 divide-y divide-border">{order.payments.map(pay => <div key={pay.id} className="flex items-center justify-between gap-2 py-3" data-testid={`payment-${pay.id}`}><div><p className="text-sm font-semibold">{pay.type === 'deposit' ? t('Deposit', 'عربون') : t('Balance', 'متبقي')}</p><p className="mt-1 text-xs text-muted-foreground">{dateShort(pay.createdAt)} · {pay.state === 'held' ? t('Held', 'محفوظ') : t('Released', 'تم التحويل')}</p></div><strong className="text-sm">{money(pay.amountDisplay, pay.currency)}</strong></div>)}</div> : <p className="mt-3 text-sm text-muted-foreground">{t('Payments will appear here.', 'ستظهر الدفعات هنا.')}</p>}
+          {order.payments?.length ? <div className="mt-3 divide-y divide-border">{order.payments.map(pay => <div key={pay.id} className="flex items-center justify-between gap-2 py-3" data-testid={`payment-${pay.id}`}><div><p className="text-sm font-semibold">{pay.type === 'deposit' ? t('Deposit', 'عربون') : t('Balance', 'متبقي')}</p><p className="mt-1 text-xs text-muted-foreground">{dateShort(pay.createdAt)} · {pay.state === 'held' ? t('Held in Akshab escrow', 'في حساب ضمان أخشاب') : pay.state === 'pending' ? t('Pending', 'قيد المعالجة') : t('Released to workshop', 'حُوّل للورشة')}</p></div><strong className="text-sm">{money(pay.amountDisplay, pay.currency)}</strong></div>)}</div> : <p className="mt-3 text-sm text-muted-foreground">{t('Payments will appear here.', 'ستظهر الدفعات هنا.')}</p>}
         </section>
       </aside>
     </div>
@@ -639,6 +657,7 @@ function Router() {
   return <ErrorBoundary resetKey={location}><Switch>
     <Route path="/" component={LandingPage} />
     <Route path="/owner" component={OwnerHome} />
+    <Route path="/owner/catalog" component={CatalogPage} />
     <Route path="/owner/orders/new" component={NewOrderPage} />
     <Route path="/owner/orders/:id" component={OrderDetailPage} />
     <Route path="/orders/new" component={NewOrderPage} />
@@ -651,7 +670,7 @@ function Router() {
 }
 function NotFound() {
   const t = useTranslation();
-  return <AppFrame><div className="mx-auto max-w-lg px-5 py-24 text-center"><Logo /><div className="surface mt-8 p-8"><p className="font-display text-5xl font-extrabold text-accent">404</p><h1 className="mt-3 text-xl font-bold">{t('This page is not on the workbench.', 'هذه الصفحة غير موجودة.')}</h1><Link href="/" className="btn btn-primary mt-5">{t('Return to Wasta', 'العودة لوسطى')}</Link></div></div></AppFrame>;
+  return <AppFrame><div className="mx-auto max-w-lg px-5 py-24 text-center"><Logo /><div className="surface mt-8 p-8"><p className="font-display text-5xl font-extrabold text-accent">404</p><h1 className="mt-3 text-xl font-bold">{t('This page is not on the workbench.', 'هذه الصفحة غير موجودة.')}</h1><Link href="/" className="btn btn-primary mt-5">{t('Return to Akshab', 'العودة لأخشاب')}</Link></div></div></AppFrame>;
 }
 function App() {
   const [lang, setLangState] = useState<Language>(() => (localStorage.getItem('wasta-language') as Language) || 'ar');

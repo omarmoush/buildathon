@@ -1,7 +1,7 @@
 // Local Node backend: better-sqlite3 behind the async Database interface.
 import BetterSqlite3 from "better-sqlite3";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { SCHEMA } from "./schema";
+import { isAppliedMigrationError, MIGRATIONS, SCHEMA } from "./schema";
 import type { Database } from "./sql";
 
 export function createDatabase(filename: string): Database {
@@ -10,6 +10,9 @@ export function createDatabase(filename: string): Database {
   connection.pragma("journal_mode = WAL");
   connection.pragma("busy_timeout = 5000");
   connection.exec(SCHEMA);
+  for (const statement of MIGRATIONS) {
+    try { connection.exec(statement); } catch (error) { if (!isAppliedMigrationError(error)) throw error; }
+  }
 
   // One connection is shared by all requests, so transactions are queued; nested calls join the active one.
   const active = new AsyncLocalStorage<true>();

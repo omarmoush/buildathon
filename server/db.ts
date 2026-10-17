@@ -15,6 +15,24 @@ export function useDatabase(connection: Database): void {
   db = connection;
 }
 
+/** Gives orders created before order codes existed a short code. */
+export async function ensureOrderCodes(): Promise<void> {
+  const missing = await db.prepare("SELECT id FROM orders WHERE code IS NULL").all<{ id: string }>();
+  for (const { id } of missing) await db.prepare("UPDATE orders SET code=? WHERE id=?").run(newOrderCode(), id);
+}
+
+// Short order IDs buyers can type: AK-XXXX-XXXX from an alphabet without look-alike characters (~40 bits).
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+export function newOrderCode(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  const chars = Array.from(bytes, byte => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join("");
+  return `AK-${chars.slice(0, 4)}-${chars.slice(4)}`;
+}
+export const normalizeOrderCode = (value: string) => {
+  const chars = value.toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^AK/, "");
+  return chars.length === 8 ? `AK-${chars.slice(0, 4)}-${chars.slice(4)}` : null;
+};
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public code = "REQUEST_FAILED") { super(message); }
 }
@@ -44,7 +62,7 @@ type OrderRow = {
   id: string; owner_id: string; buyer_name: string; buyer_phone: string; buyer_country: string;
   title: string; description: string; dimensions: string; spec_json: string; status: OrderStatus;
   design_approved: number; design_approved_at: string | null; design_change_note: string | null;
-  token: string; created_at: string; owner_name: string; owner_phone: string; workshop_name: string;
+  token: string; code: string | null; created_at: string; owner_name: string; owner_phone: string; workshop_name: string;
 };
 type QuoteRow = {
   materials_egp: number; labor_egp: number; margin_percent: number; total_egp: number;
@@ -93,7 +111,7 @@ export async function getOrder(identifier: string, byToken = false) {
       amountDisplay: money(payment.amountEgp / (qr?.fx_rate ?? 1)),
     })),
     ownerName: row.owner_name, ownerPhone: row.owner_phone, workshopName: row.workshop_name,
-    title: row.title, description: row.description, dimensions: row.dimensions, magicToken: row.token,
+    title: row.title, description: row.description, dimensions: row.dimensions, magicToken: row.token, orderCode: row.code,
     designApprovedAt: row.design_approved_at, designChangeNote: row.design_change_note, progress: updates,
     paymentMode: paymentsEnabled() ? "live" as const : "unavailable" as const,
     depositReviewPending: row.status === "deposit_paid" && hasDeposit && review?.decision !== "accepted",

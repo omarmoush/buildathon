@@ -45,6 +45,8 @@ export interface OrderSpec {
   notes: string;
   referencePhotos?: string[];
   bedroomPieces?: string[];
+  /** Furniture categories the buyer wants (bed, nightstand, wardrobe, …); multi-select in the quiz. */
+  pieces?: string[];
   generationTaskId?: string;
 }
 export interface Quote {
@@ -93,7 +95,7 @@ export interface CheckoutResponse { checkoutUrl: string }
 export interface UploadResponse { url: string }
 export interface FxRates { SAR: number; AED: number; USD: number }
 export interface CatalogItem {
-  id: string; name: string; nameAr?: string; thumbnailUrl: string; glbUrl: string; usdzUrl?: string;
+  id: string; category?: string; custom?: boolean; name: string; nameAr?: string; thumbnailUrl: string; glbUrl: string; usdzUrl?: string;
   defaultDims: Dimensions; woods: string[]; finishes: string[];
 }
 export interface MeshyTask {

@@ -4,6 +4,7 @@ import { ApiError, db, getOrder, money, notify, transition } from "../db";
 import { ownedOrder, rateLimit, requireOwner } from "./orders";
 import { calculateEstimate } from "../lib/estimates";
 import type { FurnitureEstimate } from "../../shared/contract";
+import { CATEGORIES } from "../../artifacts/api-server/src/lib/furniture-art";
 
 export const estimatesRouter = Router();
 const previewSchema = z.object({
@@ -14,6 +15,7 @@ const previewSchema = z.object({
     dimensions: z.object({ w: z.number().finite().min(10).max(600), d: z.number().finite().min(10).max(600), h: z.number().finite().min(10).max(600) }),
     wood: z.string().max(100).optional(), finish: z.string().max(100).optional(),
     bedroomPieces: z.array(z.enum(["bed", "nightstands", "wardrobe", "dresser"])).min(1).max(4).optional(),
+    pieces: z.array(z.enum(CATEGORIES)).min(1).max(CATEGORIES.length).optional(),
   }),
 });
 estimatesRouter.post("/estimates", rateLimit("estimates", 120, 60000), async (req, res) => {

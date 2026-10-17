@@ -11,6 +11,7 @@ import { paymobRouter } from "./routes/paymob";
 import { uploadsRouter } from "./routes/uploads";
 import { fxRouter } from "./routes/fx";
 import { estimatesRouter } from "./routes/estimates";
+import { productsRouter } from "./routes/products";
 import catalogRouter from "./routes/catalog";
 import meshyRouter from "./routes/meshy";
 import { setMeshyTaskStore } from "../artifacts/api-server/src/routes/meshy";
@@ -44,7 +45,7 @@ export function createApp(options: { database: "sqlite" | "d1"; requestLogger: R
   });
   app.use("/api", fxRouter, ordersRouter, quotesRouter, paymentsRouter, uploadsRouter, paymobRouter, estimatesRouter);
   // Person 2's catalog and Meshy routes (server/routes/catalog.ts, meshy.ts).
-  app.use("/api", catalogRouter, meshyRouter);
+  app.use("/api", productsRouter, catalogRouter, meshyRouter);
   app.use((_req, res) => { res.status(404).json({ error: "API route not found." }); });
   const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     if (error instanceof ZodError) { res.status(400).json({ error: "Invalid request.", details: error.issues.map(issue => ({ path: issue.path, message: issue.message })) }); return; }

@@ -52,6 +52,11 @@ export const SCHEMA = `
     note TEXT NOT NULL DEFAULT '', reviewed_at TEXT NOT NULL,
     PRIMARY KEY(order_id,phase)
   );
+  CREATE TABLE IF NOT EXISTS catalog_products (
+    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), category TEXT NOT NULL,
+    name TEXT NOT NULL, name_ar TEXT NOT NULL DEFAULT '', w REAL NOT NULL, d REAL NOT NULL, h REAL NOT NULL,
+    woods_json TEXT NOT NULL, finishes_json TEXT NOT NULL, image_url TEXT, created_at TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS meshy_tasks (
     id TEXT PRIMARY KEY, upstream_id TEXT, demo INTEGER NOT NULL, started INTEGER NOT NULL
   );
@@ -60,5 +65,13 @@ export const SCHEMA = `
   CREATE INDEX IF NOT EXISTS notifications_created ON notifications(created_at);
   CREATE INDEX IF NOT EXISTS meshy_tasks_started ON meshy_tasks(started);
 `;
+
+// Columns added after the first deploy. Each is applied once; "duplicate column" errors mean it already ran.
+export const MIGRATIONS = [
+  "ALTER TABLE orders ADD COLUMN code TEXT",
+  "CREATE UNIQUE INDEX IF NOT EXISTS orders_code ON orders(code)",
+];
+
+export const isAppliedMigrationError = (error: unknown) => /duplicate column/i.test(String(error));
 
 export const schemaStatements = () => SCHEMA.split(";").map(statement => statement.trim()).filter(Boolean);
