@@ -70,6 +70,7 @@ export const SCHEMA = `
 export const MIGRATIONS = [
   "ALTER TABLE orders ADD COLUMN code TEXT",
   "CREATE UNIQUE INDEX IF NOT EXISTS orders_code ON orders(code)",
+  "ALTER TABLE meshy_tasks ADD COLUMN refine_id TEXT",
 ];
 
 export const isAppliedMigrationError = (error: unknown) => /duplicate column/i.test(String(error));

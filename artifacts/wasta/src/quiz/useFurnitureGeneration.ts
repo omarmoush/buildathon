@@ -48,14 +48,14 @@ export function useFurnitureGeneration() {
         if (task.status === "done" || task.status === "failed") {
           setFailed(task.status === "failed"); setPending(false); return;
         }
-        if (Date.now() - started >= 90_000) setSlow(true);
+        if (Date.now() - started >= 240_000) setSlow(true);
         timer = setTimeout(poll, 3000);
       } catch {
         if (!controller.signal.aborted) { setFailed(true); setPending(false); }
       }
     }
     poll();
-    const slowTimer = setTimeout(() => setSlow(true), 90_000);
+    const slowTimer = setTimeout(() => setSlow(true), 240_000);
     return () => { controller.abort(); clearTimeout(timer); clearTimeout(slowTimer); };
   }, [taskId]);
   return { taskId, result, pending, slow, failed, prompt, generate, clear };

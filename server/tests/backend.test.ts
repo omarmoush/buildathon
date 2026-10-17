@@ -143,6 +143,40 @@ test("a quiz order can pay its estimate deposit upfront, then goes through depos
   await settleVerifiedPayment(balance.id, balance.ref, balanceEgp);
   assert.equal((await getOrder(created.orderId)).status, "closed");
 });
+test("generated pieces are textured from their prompt after the shape, starting one refine only", async () => {
+  type Call = { method: string; url: string; body?: Record<string, unknown> };
+  const calls: Call[] = [];
+  let preview: Record<string, unknown> = { status: "IN_PROGRESS", progress: 40 };
+  let refine: Record<string, unknown> = { status: "IN_PROGRESS", progress: 50 };
+  const realFetch = globalThis.fetch;
+  process.env.MESHY_API_KEY = "test-key";
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input); const method = init?.method ?? "GET";
+    calls.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (url.startsWith("https://assets.meshy.ai/")) return new Response(url.endsWith("textured.glb") ? "textured" : "shape");
+    const json = (data: unknown) => Response.json(data);
+    if (method === "POST") return json({ result: calls.filter(call => call.method === "POST").length === 1 ? "preview-1" : "refine-1" });
+    return json(url.endsWith("/preview-1") ? preview : refine);
+  }) as typeof fetch;
+  try {
+    const { taskId } = (await request(app).post("/api/meshy/generate").send({ prompt: "Walnut nightstand" }).expect(202)).body;
+    assert.equal((await request(app).get(`/api/meshy/${taskId}`).expect(200)).body.progress, 20);
+    preview = { status: "SUCCEEDED", progress: 100, prompt: "Walnut nightstand", model_urls: { glb: "https://assets.meshy.ai/shape.glb" } };
+    const polls = await Promise.all([request(app).get(`/api/meshy/${taskId}`), request(app).get(`/api/meshy/${taskId}`)]);
+    assert.deepEqual(polls.map(poll => poll.body.status), ["processing", "processing"]);
+    const refines = calls.filter(call => call.method === "POST" && call.body?.mode === "refine");
+    assert.equal(refines.length, 1);
+    assert.equal(refines[0]!.body!.preview_task_id, "preview-1");
+    assert.equal(refines[0]!.body!.texture_prompt, "Walnut nightstand");
+    assert.equal((await request(app).get(`/api/meshy/${taskId}`)).body.progress, 75);
+    refine = { status: "SUCCEEDED", progress: 100, model_urls: { glb: "https://assets.meshy.ai/textured.glb" } };
+    const done = (await request(app).get(`/api/meshy/${taskId}`).expect(200)).body;
+    assert.equal(done.status, "done");
+    const asset = await request(app).get(done.glbUrl).expect(200).buffer(true)
+      .parse((res, callback) => { const chunks: Buffer[] = []; res.on("data", chunk => chunks.push(chunk)); res.on("end", () => callback(null, Buffer.concat(chunks))); });
+    assert.equal((asset.body as Buffer).toString(), "textured");
+  } finally { globalThis.fetch = realFetch; delete process.env.MESHY_API_KEY; }
+});
 test("unpaid quotes expire and demo FX endpoint returns exact contract rates", async () => {
   const order = (await getOrder("demo-dining"));
   await db.prepare("UPDATE quotes SET expires_at=? WHERE order_id=?").run(new Date(0).toISOString(), order.id);

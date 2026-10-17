@@ -6,16 +6,20 @@ import { catalogItems } from "./catalog";
 // Contract explicitly requests preview-only for the buildathon.
 const MESHY = "https://api.meshy.ai/openapi/v2/text-to-3d";
 type Task = {
-  status?: string; progress?: number;
+  status?: string; progress?: number; prompt?: string;
   model_urls?: { glb?: string; usdz?: string }; thumbnail_url?: string;
 };
-export type MeshyTaskEntry = { upstreamId?: string; started: number; demo: boolean };
+/** `upstreamId` is Meshy's preview (shape) task; `refineId` its texturing task, or a REFINE_* marker. */
+export type MeshyTaskEntry = { upstreamId?: string; refineId?: string; started: number; demo: boolean };
 type Entry = MeshyTaskEntry;
 /** Where generation tasks live. In-memory by default; the Wasta server plugs in its database
  *  so tasks survive restarts and work across Cloudflare Worker instances. */
 export interface MeshyTaskStore {
   get(id: string): Promise<Entry | undefined>;
   add(id: string, entry: Entry): Promise<void>;
+  /** Sets `refineId` only if it is still empty; true when this call set it (so only one refine starts). */
+  claimRefine(id: string, value: string): Promise<boolean>;
+  setRefine(id: string, value: string): Promise<void>;
   /** Drops tasks started before `before` and returns how many remain. */
   prune(before: number): Promise<number>;
 }
@@ -23,6 +27,12 @@ const memory = new Map<string, Entry>();
 let tasks: MeshyTaskStore = {
   get: async id => memory.get(id),
   add: async (id, entry) => { memory.set(id, entry); },
+  claimRefine: async (id, value) => {
+    const entry = memory.get(id);
+    if (!entry || entry.refineId) return false;
+    entry.refineId = value; return true;
+  },
+  setRefine: async (id, value) => { const entry = memory.get(id); if (entry) entry.refineId = value; },
   prune: async before => {
     for (const [id, entry] of memory) if (entry.started < before) memory.delete(id);
     return memory.size;
@@ -55,6 +65,29 @@ async function getTask(entry: Entry): Promise<Task> {
     return { status: progress === 100 ? "SUCCEEDED" : "IN_PROGRESS", progress };
   }
   return meshy("GET", `/${encodeURIComponent(entry.upstreamId!)}`);
+}
+// Meshy builds the shape (preview), then textures it from the same prompt (refine).
+// Progress runs 0–50 for the shape and 50–100 for the texture. If texturing cannot start
+// or fails, the untextured shape is returned rather than failing the buyer's piece.
+const REFINE_STARTING = "starting", REFINE_SKIPPED = "skipped";
+async function currentTask(taskId: string, entry: Entry): Promise<{ task: Task; progress: number }> {
+  const preview = await getTask(entry);
+  if (entry.demo) return { task: preview, progress: preview.progress || 0 };
+  if (preview.status !== "SUCCEEDED") return { task: preview, progress: Math.round((preview.progress || 0) / 2) };
+  let refineId = entry.refineId;
+  if (!refineId && await tasks.claimRefine(taskId, REFINE_STARTING)) {
+    refineId = await meshy("POST", "", {
+      mode: "refine", preview_task_id: entry.upstreamId, texture_prompt: preview.prompt?.slice(0, 800),
+      enable_pbr: true, target_formats: ["glb", "usdz"],
+    }).then(created => created.result || REFINE_SKIPPED).catch(() => REFINE_SKIPPED);
+    await tasks.setRefine(taskId, refineId);
+  }
+  if (!refineId || refineId === REFINE_STARTING) return { task: { status: "IN_PROGRESS" }, progress: 50 };
+  if (refineId === REFINE_SKIPPED) return { task: preview, progress: 100 };
+  const refine = await meshy("GET", `/${encodeURIComponent(refineId)}`);
+  if (refine.status === "SUCCEEDED") return { task: refine, progress: 100 };
+  if (normalizedStatus(refine.status) === "failed") return { task: preview, progress: 100 };
+  return { task: { status: "IN_PROGRESS" }, progress: 50 + Math.round((refine.progress || 0) / 2) };
 }
 export function normalizedStatus(status?: string) {
   if (status === "SUCCEEDED") return "done";
@@ -103,7 +136,7 @@ router.get("/meshy/:taskId/asset/:format", async (req, res) => {
   }
   try {
     // Re-fetch to refresh Meshy's expiring signed model URLs.
-    const task = await getTask(entry);
+    const { task } = await currentTask(String(req.params.taskId), entry);
     const target = format === "thumbnail" ? task.thumbnail_url : task.model_urls?.[format as "glb" | "usdz"];
     if (!target || !isAllowedAsset(target)) { res.sendStatus(404); return; }
     // Never follow redirects off the allowlisted host. Cloudflare Workers reject redirect: "error",
@@ -127,11 +160,11 @@ router.get("/meshy/:taskId", async (req, res) => {
   if (!entry) { res.status(404).json({ error: "Task expired or not found" }); return; }
   res.set("Cache-Control", "no-store");
   try {
-    const task = await getTask(entry);
+    const { task, progress } = await currentTask(taskId, entry);
     const status = normalizedStatus(task.status);
     const base = `/api/meshy/${encodeURIComponent(taskId)}/asset`;
     res.json({
-      status, progress: Math.max(0, Math.min(100, task.progress || 0)), demo: entry.demo,
+      status, progress: Math.max(0, Math.min(100, progress)), demo: entry.demo,
       ...(status === "done" ? {
         glbUrl: entry.demo ? catalogItems[0].glbUrl : task.model_urls?.glb ? `${base}/glb` : undefined,
         usdzUrl: task.model_urls?.usdz ? `${base}/usdz` : undefined,
