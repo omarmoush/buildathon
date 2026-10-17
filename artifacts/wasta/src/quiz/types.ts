@@ -1,4 +1,5 @@
 import type { Dimensions as SharedDimensions, OrderSpec, MeshyTask } from "../../../../shared/contract";
+import type { FurnitureEstimate, OrderReview } from "@workspace/api-client-react";
 // Use Person 1's wire contract, rather than maintaining a competing spec shape.
 export type Language = "ar" | "en";
 export type Dimensions = SharedDimensions;
@@ -14,6 +15,8 @@ export type BuyerOrder = {
   designApproved: boolean; spec: Spec;
   workshopName?: string; ownerPhone?: string; designChangeNote?: string | null;
   paymentMode?: "unavailable" | "live";
+  estimate?: FurnitureEstimate | null;
+  review?: OrderReview | null;
   quote?: {
     materialsEgp: number; laborEgp: number; marginPercent: number;
     totalEgp: number; displayCurrency: "EGP" | "SAR" | "AED" | "USD";

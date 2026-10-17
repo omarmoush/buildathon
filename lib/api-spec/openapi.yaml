@@ -14,6 +14,70 @@ tags:
   - name: buyer
   - name: notifications
 paths:
+  /estimates:
+    post:
+      operationId: estimateFurniture
+      tags: [orders]
+      summary: Calculate an indicative EGP furniture estimate; not a payable quote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FurnitureEstimateInput"
+      responses:
+        "200":
+          description: Server-calculated illustrative estimate, subject to workshop confirmation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FurnitureEstimate"
+  /orders/{id}/review:
+    post:
+      operationId: reviewOrderRequest
+      tags: [orders]
+      summary: Owner review of a new request or a verified-deposit order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderReviewInput"
+      responses:
+        "200":
+          description: Updated workshop order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /orders/{id}/estimate:
+    post:
+      operationId: saveOrderEstimate
+      tags: [orders]
+      summary: Owner saves an indicative estimate before the final quote is locked
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkshopEstimateInput"
+      responses:
+        "200":
+          description: Order with the workshop estimate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
   /healthz:
     get:
       operationId: healthCheck
@@ -391,6 +455,77 @@ paths:
                 $ref: "#/components/schemas/Order"
 components:
   schemas:
+    FurnitureEstimateInput:
+      type: object
+      required: [spec]
+      properties:
+        spec:
+          type: object
+          required: [productType, pieceSource, dimensions]
+          properties:
+            productType: { type: string }
+            pieceSource: { type: string, enum: [catalog, customized, generated] }
+            catalogItemId: { type: string }
+            dimensions:
+              type: object
+              required: [w, d, h]
+              properties:
+                w: { type: number, minimum: 10, maximum: 600 }
+                d: { type: number, minimum: 10, maximum: 600 }
+                h: { type: number, minimum: 10, maximum: 600 }
+            wood: { type: string }
+            finish: { type: string }
+            style: { type: array, items: { type: string } }
+            bedroomPieces: { type: array, items: { type: string, enum: [bed, nightstands, wardrobe, dresser] } }
+    EstimateLineItem:
+      type: object
+      required: [key, label, labelAr, quantity, amountEgp]
+      properties:
+        key: { type: string }
+        label: { type: string }
+        labelAr: { type: string }
+        quantity: { type: integer }
+        amountEgp: { type: number }
+    FurnitureEstimate:
+      type: object
+      required: [currency, totalEgp, lowEgp, highEgp, depositPercent, depositEgp, materialsEgp, laborEgp, marginPercent, items, pricingVersion, createdAt, indicative, excludes]
+      properties:
+        currency: { type: string, enum: [EGP] }
+        totalEgp: { type: number }
+        lowEgp: { type: number }
+        highEgp: { type: number }
+        depositPercent: { type: number }
+        depositEgp: { type: number }
+        materialsEgp: { type: number }
+        laborEgp: { type: number }
+        marginPercent: { type: number }
+        items: { type: array, items: { $ref: "#/components/schemas/EstimateLineItem" } }
+        pricingVersion: { type: string }
+        createdAt: { type: string }
+        indicative: { type: boolean }
+        excludes: { type: array, items: { type: string } }
+    OrderReviewInput:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [accepted, changes_requested] }
+        note: { type: string, maxLength: 2000 }
+    WorkshopEstimateInput:
+      type: object
+      required: [materialsEgp, laborEgp, marginPercent]
+      properties:
+        materialsEgp: { type: number, minimum: 0 }
+        laborEgp: { type: number, minimum: 0 }
+        marginPercent: { type: number, minimum: 0, maximum: 1000 }
+        depositPercent: { type: number, exclusiveMinimum: 0, maximum: 1 }
+    OrderReview:
+      type: object
+      required: [phase, decision, note, reviewedAt]
+      properties:
+        phase: { type: string, enum: [request, deposit] }
+        decision: { type: string, enum: [accepted, changes_requested] }
+        note: { type: string }
+        reviewedAt: { type: string }
     HealthStatus:
       type: object
       properties:
@@ -482,6 +617,7 @@ components:
         marginPercent: { type: number, minimum: 0 }
         displayCurrency: { $ref: "#/components/schemas/Currency" }
         fxRateToEgp: { type: number, exclusiveMinimum: 0 }
+        depositPercent: { type: number, exclusiveMinimum: 0, maximum: 1 }
         expiresAt: { type: string, format: date-time }
       required: [materialsCostEgp, laborCostEgp, marginPercent, displayCurrency, fxRateToEgp, expiresAt]
     Payment:
@@ -550,6 +686,9 @@ components:
     Order:
       type: object
       properties:
+        estimate: { anyOf: [ { $ref: "#/components/schemas/FurnitureEstimate" }, { type: "null" } ] }
+        review: { anyOf: [ { $ref: "#/components/schemas/OrderReview" }, { type: "null" } ] }
+        depositReviewPending: { type: boolean }
         id: { type: string }
         ownerId: { type: string }
         ownerName: { type: string }

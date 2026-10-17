@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "Wasta"
-description = "A bilingual Arabic-first order and payment-protection tool for small Egyptian workshops, helping owners quote, share progress, and collect milestone-based payments from buyers through a secure no-account link."
+description = "Arabic-first furniture ordering for Egyptian workshops and buyers: public bedroom quiz, 3D/AR catalog and generated models, private buyer order links, and an owner dashboard with locked-rate quotes and progress."
 version = "1.0.0"
 id = "artifacts/wasta"
 router = "path"

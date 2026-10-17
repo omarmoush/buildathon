@@ -4,6 +4,9 @@ import { demoCatalog, demoOrder, initialSpec } from "./demo";
 import PieceStep, { GenerationPanel } from "./PieceStep";
 import { useFurnitureGeneration } from "./useFurnitureGeneration";
 import Furniture3D from "../buyer/Furniture3D";
+import { EstimateCard, EstimatePreview } from "./EstimateCard";
+import type { FurnitureEstimate } from "@workspace/api-client-react";
+import { Link } from "wouter";
 import type { CatalogItem, Language, Spec } from "./types";
 import "./buyer.css";
 
@@ -13,19 +16,30 @@ const today = () => {
 };
 export default function QuizPage() {
   const demo = new URLSearchParams(window.location.search).get("demo") === "1";
-  const [lang, setLang] = useState<Language>("ar");
+  const [lang, setLang] = useState<Language>(() => localStorage.getItem("wasta-lang") === "en" ? "en" : "ar");
   const t = (ar: string, en: string) => lang === "ar" ? ar : en;
   const [step, setStep] = useState(0);
-  const [spec, setSpec] = useState<Spec>(initialSpec);
+  const entry = useRef(new URLSearchParams(window.location.search)).current;
+  const [spec, setSpec] = useState<Spec>(() => {
+    const product = entry.get("product");
+    const source = entry.get("source");
+    return { ...initialSpec, dimensions: { ...initialSpec.dimensions }, style: [...initialSpec.style],
+      productType: product && ["bedroom-set", "wardrobe", "dining-set", "living-room", "other"].includes(product) ? product : initialSpec.productType,
+      pieceSource: source === "customized" || source === "generated" ? source : "catalog",
+      bedroomPieces: product && product !== "bedroom-set" ? undefined : [...(initialSpec.bedroomPieces || [])],
+    };
+  });
   const [catalog, setCatalog] = useState<CatalogItem[]>(demo ? demoCatalog : []);
   const [catalogError, setCatalogError] = useState(false);
+  const [catalogVersion, setCatalogVersion] = useState(0);
+  const prefilled = useRef(false);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [success, setSuccess] = useState<{ orderId: string; token: string }>();
+  const [success, setSuccess] = useState<{ orderId: string; token: string; estimate?: FurnitureEstimate | null }>();
   const [copied, setCopied] = useState(false);
   const submitting = useRef(false);
   const generation = useFurnitureGeneration();
@@ -38,9 +52,20 @@ export default function QuizPage() {
   useEffect(() => {
     if (demo) return;
     const controller = new AbortController();
+    setCatalogError(false);
     api<CatalogItem[]>("/api/catalog", undefined, controller.signal).then(setCatalog).catch(() => { if (!controller.signal.aborted) setCatalogError(true); });
     return () => controller.abort();
-  }, [demo]);
+  }, [demo, catalogVersion]);
+  useEffect(() => {
+    if (prefilled.current || !catalog.length) return;
+    prefilled.current = true;
+    const selected = catalog.find(item => item.id === entry.get("item"));
+    if (selected && entry.get("source") !== "generated") {
+      setSpec(old => ({ ...old, catalogItemId: selected.id, glbUrl: selected.glbUrl, usdzUrl: selected.usdzUrl,
+        thumbnailUrl: selected.thumbnailUrl, dimensions: { ...selected.defaultDims }, wood: selected.woods[0], finish: selected.finishes[0] }));
+    }
+  }, [catalog, entry]);
+  useEffect(() => { localStorage.setItem("wasta-lang", lang); }, [lang]);
   useEffect(() => { heading.current?.focus(); }, [step, success]);
   const item = catalog.find(item => item.id === spec.catalogItemId);
   const selectFallback = () => {
@@ -80,7 +105,7 @@ export default function QuizPage() {
         sessionStorage.setItem("wasta-demo-order", JSON.stringify(order));
         setSuccess({ orderId: "demo-person2", token: "demo-person2" });
       } else {
-        const result = await api<{ orderId: string; token: string }>("/api/orders", {
+        const result = await api<{ orderId: string; token: string; estimate?: FurnitureEstimate | null }>("/api/orders", {
           buyerName: name.trim(), buyerPhone: phone.trim(), buyerCountry: spec.deliveryCountry, spec: cleanSpec,
         });
         if (!result.token || !result.orderId) throw new Error("Invalid order response");
@@ -88,7 +113,7 @@ export default function QuizPage() {
       }
     } catch (err) {
       setError(err instanceof ApiError && [401, 404, 422].includes(err.status)
-        ? t("مسار الطلب العام غير موصول بعد. اختياراتك ما زالت هنا؛ جرّب لاحقاً أو استخدم العرض التجريبي.", "The public order endpoint is not wired yet. Your choices are still here; retry later or use the explicit demo.")
+        ? t("تعذر حفظ الطلب بهذه البيانات. اختياراتك ما زالت هنا؛ تحقق من البيانات وحاول مجدداً.", "The order could not be saved with these details. Your choices are still here; check them and retry.")
         : t("لم نتلق تأكيداً للطلب. لا تكرر الإرسال إذا كان قد وصل للورشة؛ تحقّق معها أولاً.", "No order confirmation was received. Check with the workshop before retrying to avoid a duplicate."));
     } finally { submitting.current = false; setBusy(false); }
   }
@@ -109,7 +134,7 @@ export default function QuizPage() {
   }
   const magicLink = success ? `${location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/b/${encodeURIComponent(success.token)}${demo ? "?demo=1" : ""}` : "";
   return <div className="wb" dir={lang === "ar" ? "rtl" : "ltr"} lang={lang}>
-    <header><strong>{t("وسطى", "Wasta")}</strong><span>{t("ورشة رضا • دمياط", "Reda's workshop • Damietta")}</span>
+    <header><Link href="/" className="wb-link"><strong>{t("وسطى", "Wasta")}</strong></Link><span>{t("ورشة رضا • دمياط", "Reda's workshop • Damietta")}</span>
       <button onClick={() => setLang(lang === "ar" ? "en" : "ar")} aria-label={t("Switch to English", "التبديل للعربية")}>{lang === "ar" ? "English" : "العربية"}</button></header>
     <main>
       {demo && <p className="wb-notice">{t("عرض تجريبي فقط — لا يُرسل طلباً حقيقياً ولا يحصّل أموالاً.", "Demo only — no real order is submitted and no money is collected.")}</p>}
@@ -117,6 +142,8 @@ export default function QuizPage() {
         <span className="wb-badge">{t("تم استلام الطلب", "Request received")}</span>
         <h1 ref={heading} tabIndex={-1}>{t("احتفظ برابط طلبك", "Keep your private order link")}</h1>
         <p>{t("راجع التصميم والسعر وتابع التصنيع من هذا الرابط دون إنشاء حساب. لا تشاركه إلا مع من تثق به.", "Review the design and quote and follow production without an account. Share this private link only with people you trust.")}</p>
+        {success.estimate && <EstimateCard estimate={success.estimate} lang={lang} saved />}
+        <p className="wb-notice">{t("طلبك ينتظر مراجعة الورشة. ربط Paymob قيد الانتظار، ولا يوجد أي مبلغ محصّل أو مستحق الدفع الآن.", "Your request is awaiting workshop review. Paymob setup is pending; no money was collected or is payable now.")}</p>
         <a className="wb-link wb-primary" href={magicLink}>{t("افتح طلبك", "Open your order")}</a>
         <label>{t("رابط الطلب الخاص", "Private order link")}<input readOnly value={magicLink} dir="ltr" onFocus={e => e.target.select()} /></label>
         <button onClick={() => navigator.clipboard.writeText(magicLink).then(() => setCopied(true)).catch(() => setError(t("انسخ الرابط من الحقل أعلاه.", "Copy the link from the field above.")))}>{copied ? t("تم النسخ", "Copied") : t("نسخ الرابط", "Copy link")}</button>
@@ -127,7 +154,7 @@ export default function QuizPage() {
         <h1 ref={heading} tabIndex={-1}>{steps[step]}</h1>
         {step === 0 && <div className="wb-stack">
           <div className="wb-grid">{[["bedroom-set", t("غرفة نوم", "Bedroom set")], ["dining-set", t("غرفة سفرة", "Dining set")], ["wardrobe", t("دولاب", "Wardrobe")], ["living-room", t("غرفة معيشة", "Living room")], ["other", t("قطعة أخرى", "Other")]].map(([value, label]) =>
-            <button className="wb-card" key={value} aria-pressed={spec.productType === value} onClick={() => patch({ productType: value, bedroomPieces: value === "bedroom-set" ? ["bed", "nightstands", "wardrobe", "dresser"] : undefined })}><strong>{label}</strong></button>)}</div>
+            <button className="wb-card" key={value} aria-pressed={spec.productType === value} onClick={() => { if (spec.productType !== value) patch({ productType: value, bedroomPieces: value === "bedroom-set" ? ["bed", "nightstands", "wardrobe", "dresser"] : undefined, catalogItemId: undefined, glbUrl: undefined, usdzUrl: undefined, thumbnailUrl: undefined, generationTaskId: undefined, prompt: undefined }); }}><strong>{label}</strong></button>)}</div>
           {spec.productType === "bedroom-set" && <section className="wb-card"><h2>{t("محتويات غرفة النوم", "Your bedroom set")}</h2>
             <p>{t("اختر القطع المطلوبة. المقاسات والنموذج في الخطوات التالية تخص القطعة الرئيسية؛ اكتب تفاصيل باقي القطع في الملاحظات.", "Choose included pieces. The next steps size and preview the main piece; add other pieces' dimensions in notes.")}</p>
             {[["bed", t("سرير مزدوج", "Double bed")], ["nightstands", t("٢ كومودينو", "2 nightstands")], ["wardrobe", t("دولاب ملابس", "Wardrobe")], ["dresser", t("تسريحة", "Dresser")]].map(([value, label]) =>
@@ -146,7 +173,8 @@ export default function QuizPage() {
           {spec.referencePhotos?.map(url => <img key={url} src={url} alt={t("صورتك المرجعية", "Your reference photo")} width={100} />)}
         </>}
         {step === 2 && <>
-          {catalogError && <p className="wb-error">{t("الكتالوج غير متاح حالياً. أعد تحميل الصفحة أو استخدم التوليد والنموذج الجاهز.", "Catalog unavailable. Reload or use generation and the prepared fallback.")}</p>}
+          {catalogError && <div className="wb-error" role="alert"><p>{t("الكتالوج غير متاح حالياً. يمكنك إعادة المحاولة أو استخدام التوليد والنموذج الجاهز.", "Catalog unavailable. Retry or use generation and the prepared fallback.")}</p><button onClick={() => setCatalogVersion(value => value + 1)}>{t("إعادة تحميل الكتالوج", "Retry catalog")}</button></div>}
+          {!catalog.length && !catalogError && <p role="status">{t("جارٍ تحميل الكتالوج…", "Loading catalog…")}</p>}
           <PieceStep spec={spec} patch={patch} catalog={catalog} lang={lang} />
         </>}
         {step === 3 && <div className="wb-columns">
@@ -176,6 +204,7 @@ export default function QuizPage() {
         {spec.pieceSource === "generated" && !spec.glbUrl && (step === 2 || generation.taskId || generation.failed) &&
           <GenerationPanel generation={generation} lang={lang} prompt={prompt} onPrompt={setPrompt} onKeep={keep} onFallback={selectFallback} />}
         {spec.pieceSource === "generated" && spec.glbUrl && <p className="wb-badge">{t("تم الاحتفاظ بالنموذج", "Model selected")}</p>}
+        {step >= 3 && !demo && spec.glbUrl && <EstimatePreview spec={spec} lang={lang} />}
         {error && <p role="alert" className="wb-error">{error}</p>}
         <nav className="wb-actions" aria-label={t("خطوات الطلب", "Quiz navigation")}>
           <button disabled={step === 0 || busy} onClick={() => { setStep(s => s - 1); setError(""); }}>{t("السابق", "Back")}</button>

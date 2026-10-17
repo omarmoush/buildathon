@@ -22,6 +22,7 @@ quotesRouter.post("/orders/:id/quote", requireOwner, (req, res) => {
     fxRate: body.fxRate ?? body.fxRateToEgp,
   });
   if (!order.designApproved || order.status !== "design_review") throw new ApiError(409, "The buyer must approve the design before quoting.");
+  if (order.review?.decision === "changes_requested") throw new ApiError(409, "Accept the workshop review before sending a final quote.");
   if (order.quote) throw new ApiError(409, "Quotes are locked and cannot be overwritten.");
   if (data.displayCurrency === "EGP" && data.fxRate !== 1) throw new ApiError(400, "The EGP exchange rate must be 1.");
   const totalEgp = money((data.materialsEgp + data.laborEgp) * (1 + data.marginPercent / 100));

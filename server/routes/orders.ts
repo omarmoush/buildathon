@@ -3,6 +3,7 @@ import { randomBytes, randomUUID, createHmac, scryptSync, timingSafeEqual } from
 import { z } from "zod";
 import { ApiError, db, getOrder, listOrders, money, notifications, notify, transition } from "../db";
 import type { OrderSpec } from "../../shared/contract";
+import { calculateEstimate } from "../lib/estimates";
 
 export const ordersRouter = Router();
 const sessionSecret = process.env.SESSION_SECRET;
@@ -66,7 +67,7 @@ ordersRouter.post("/auth/login", rateLimit("login", 15, 15 * 60000), (req, res) 
 ordersRouter.get("/auth/session", requireOwner, (_req, res) => { res.json(publicOwner(res.locals.ownerId)); });
 ordersRouter.post("/auth/logout", (_req, res) => { res.clearCookie("wasta_session", { path: "/" }).json({ message: "Signed out." }); });
 
-const specSchema = z.object({
+export const specSchema = z.object({
   productType: z.string().trim().min(1).max(200), style: z.array(z.string().max(100)).max(20).default([]),
   pieceSource: z.enum(["catalog", "customized", "generated"]),
   catalogItemId: z.string().max(200).optional(), prompt: z.string().max(10000).optional(),
@@ -91,6 +92,7 @@ ordersRouter.post("/orders", rateLimit("create-order", 40, 3600000), (req, res) 
     buyerPhone: z.string().trim().min(6).max(40), buyerCountry: z.string().trim().min(1).max(100),
     spec: specSchema }).parse(body);
   const id = randomUUID(); const token = randomBytes(32).toString("hex");
+  const estimate = legacy ? null : calculateEstimate(data.spec);
   db.transaction(() => {
     db.prepare(`INSERT INTO orders (id,owner_id,buyer_name,buyer_phone,buyer_country,title,description,
       dimensions,spec_json,status,token,created_at) VALUES (?,?,?,?,?,?,?,?,?,'requested',?,?)`)
@@ -98,6 +100,8 @@ ordersRouter.post("/orders", rateLimit("create-order", 40, 3600000), (req, res) 
         data.spec.notes, legacy ? String(req.body.dimensions ?? "") :
           `${data.spec.dimensions.w} × ${data.spec.dimensions.d} × ${data.spec.dimensions.h} cm`,
         JSON.stringify(data.spec satisfies OrderSpec), token, new Date().toISOString());
+    if (estimate) db.prepare("INSERT INTO order_estimates (order_id,estimate_json) VALUES (?,?)")
+      .run(id, JSON.stringify(estimate));
     notify(id, "A new custom order was requested.");
     if (data.spec.thumbnailUrl) db.prepare("INSERT INTO order_images VALUES (?,?,?,?,?)")
       .run(randomUUID(), id, data.spec.thumbnailUrl, "reference", new Date().toISOString());
@@ -106,7 +110,7 @@ ordersRouter.post("/orders", rateLimit("create-order", 40, 3600000), (req, res) 
         .run(randomUUID(), id, url, "reference", new Date().toISOString());
     }
   })();
-  res.status(201).json(legacy ? { ...getOrder(id), orderId: id, token } : { orderId: id, token });
+  res.status(201).json(legacy ? { ...getOrder(id), orderId: id, token } : { orderId: id, token, estimate });
 });
 ordersRouter.get("/orders", requireOwner, (_req, res) => { res.json(listOrders(res.locals.ownerId)); });
 ordersRouter.get("/orders/:id", requireOwner, (req, res) => { res.json(ownedOrder(String(req.params.id), res.locals.ownerId)); });
@@ -165,6 +169,8 @@ ordersRouter.post("/buyer/:token/design-decision", (req, res) => {
 ordersRouter.post("/orders/:id/progress", requireOwner, (req, res) => {
   const order = ownedOrder(String(req.params.id), res.locals.ownerId);
   if (!["deposit_paid", "in_production"].includes(order.status)) throw new ApiError(409, "A deposit must be paid before production updates.");
+  if (order.status === "deposit_paid" && order.depositReviewPending)
+    throw new ApiError(409, "Review and accept the deposited order before starting production.", "DEPOSIT_REVIEW_REQUIRED");
   const data = z.object({ stage: z.string().trim().min(1).max(100), note: z.string().max(10000).default(""),
     photoUrl: z.string().max(2000).nullable().optional() }).parse(req.body);
   db.transaction(() => {

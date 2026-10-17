@@ -5,6 +5,144 @@
  * Wasta workshop order and milestone payment API
  * OpenAPI spec version: 0.1.0
  */
+export type FurnitureEstimateInputSpecPieceSource = typeof FurnitureEstimateInputSpecPieceSource[keyof typeof FurnitureEstimateInputSpecPieceSource];
+
+
+export const FurnitureEstimateInputSpecPieceSource = {
+  catalog: 'catalog',
+  customized: 'customized',
+  generated: 'generated',
+} as const;
+
+export type FurnitureEstimateInputSpecDimensions = {
+  /**
+     * @minimum 10
+     * @maximum 600
+     */
+  w: number;
+  /**
+     * @minimum 10
+     * @maximum 600
+     */
+  d: number;
+  /**
+     * @minimum 10
+     * @maximum 600
+     */
+  h: number;
+};
+
+export type FurnitureEstimateInputSpecBedroomPiecesItem = typeof FurnitureEstimateInputSpecBedroomPiecesItem[keyof typeof FurnitureEstimateInputSpecBedroomPiecesItem];
+
+
+export const FurnitureEstimateInputSpecBedroomPiecesItem = {
+  bed: 'bed',
+  nightstands: 'nightstands',
+  wardrobe: 'wardrobe',
+  dresser: 'dresser',
+} as const;
+
+export type FurnitureEstimateInputSpec = {
+  productType: string;
+  pieceSource: FurnitureEstimateInputSpecPieceSource;
+  catalogItemId?: string;
+  dimensions: FurnitureEstimateInputSpecDimensions;
+  wood?: string;
+  finish?: string;
+  style?: string[];
+  bedroomPieces?: FurnitureEstimateInputSpecBedroomPiecesItem[];
+};
+
+export interface FurnitureEstimateInput {
+  spec: FurnitureEstimateInputSpec;
+}
+
+export interface EstimateLineItem {
+  key: string;
+  label: string;
+  labelAr: string;
+  quantity: number;
+  amountEgp: number;
+}
+
+export type FurnitureEstimateCurrency = typeof FurnitureEstimateCurrency[keyof typeof FurnitureEstimateCurrency];
+
+
+export const FurnitureEstimateCurrency = {
+  EGP: 'EGP',
+} as const;
+
+export interface FurnitureEstimate {
+  currency: FurnitureEstimateCurrency;
+  totalEgp: number;
+  lowEgp: number;
+  highEgp: number;
+  depositPercent: number;
+  depositEgp: number;
+  materialsEgp: number;
+  laborEgp: number;
+  marginPercent: number;
+  items: EstimateLineItem[];
+  pricingVersion: string;
+  createdAt: string;
+  indicative: boolean;
+  excludes: string[];
+}
+
+export type OrderReviewInputDecision = typeof OrderReviewInputDecision[keyof typeof OrderReviewInputDecision];
+
+
+export const OrderReviewInputDecision = {
+  accepted: 'accepted',
+  changes_requested: 'changes_requested',
+} as const;
+
+export interface OrderReviewInput {
+  decision: OrderReviewInputDecision;
+  /** @maxLength 2000 */
+  note?: string;
+}
+
+export interface WorkshopEstimateInput {
+  /** @minimum 0 */
+  materialsEgp: number;
+  /** @minimum 0 */
+  laborEgp: number;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  marginPercent: number;
+  /**
+     * @maximum 1
+     * @exclusiveMinimum 0
+     */
+  depositPercent?: number;
+}
+
+export type OrderReviewPhase = typeof OrderReviewPhase[keyof typeof OrderReviewPhase];
+
+
+export const OrderReviewPhase = {
+  request: 'request',
+  deposit: 'deposit',
+} as const;
+
+export type OrderReviewDecision = typeof OrderReviewDecision[keyof typeof OrderReviewDecision];
+
+
+export const OrderReviewDecision = {
+  accepted: 'accepted',
+  changes_requested: 'changes_requested',
+} as const;
+
+export interface OrderReview {
+  phase: OrderReviewPhase;
+  decision: OrderReviewDecision;
+  note: string;
+  reviewedAt: string;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -131,6 +269,11 @@ export interface QuoteInput {
   displayCurrency: Currency;
   /** @exclusiveMinimum 0 */
   fxRateToEgp: number;
+  /**
+     * @maximum 1
+     * @exclusiveMinimum 0
+     */
+  depositPercent?: number;
   expiresAt: string;
 }
 
@@ -239,6 +382,9 @@ export interface OrderInput {
 }
 
 export interface Order {
+  estimate?: FurnitureEstimate | null;
+  review?: OrderReview | null;
+  depositReviewPending?: boolean;
   id: string;
   ownerId: string;
   ownerName: string;

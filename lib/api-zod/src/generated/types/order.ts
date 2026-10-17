@@ -5,13 +5,18 @@
  * Wasta workshop order and milestone payment API
  * OpenAPI spec version: 0.1.0
  */
+import type { FurnitureEstimate } from './furnitureEstimate';
 import type { OrderImage } from './orderImage';
+import type { OrderReview } from './orderReview';
 import type { OrderStatus } from './orderStatus';
 import type { Payment } from './payment';
 import type { ProgressUpdate } from './progressUpdate';
 import type { Quote } from './quote';
 
 export interface Order {
+  estimate?: FurnitureEstimate | null;
+  review?: OrderReview | null;
+  depositReviewPending?: boolean;
   id: string;
   ownerId: string;
   ownerName: string;

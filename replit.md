@@ -47,6 +47,10 @@ Wasta helps Egyptian workshops manage custom furniture orders and share progress
 - The shared contract uses `requested`, not `draft`, and `depositPercent` is a fraction (0.5 = 50%). Read-only legacy field aliases remain while frontend contributors adapt.
 - Optional quiz bedroom pieces, reference photo URLs and Meshy task IDs are persisted in the existing spec JSON. Owner and buyer read the same order; no second order store is introduced.
 - The active order response includes `paymentMode: "unavailable"`; the buyer UI disables checkout while that boundary remains unconfigured. Local `?demo=1` screens do not modify server payment states.
+- The user explicitly chose “Build the rest; leave Paymob payments pending.” Do not substitute a provider, simulate real deposits, or expose manual mark-paid controls.
+- Planning estimates use illustrative rates, not approved supplier prices. Save the server-calculated snapshot with the order; allow the workshop to replace it before the final quote. A final approved quote, not the planning estimate, determines any future payment.
+- The estimated deposit defaults to 50%; the workshop can set the final deposit percentage before locking the quote. A deposit review is separate from request/design approval and must be accepted before starting production.
+- The public home page is the buyer entry point. Workshop sign-in/dashboard stays at `/owner`; preserve both new and legacy order detail links.
 
 ## Product
 
@@ -57,9 +61,10 @@ Wasta helps Egyptian workshops manage custom furniture orders and share progress
 ## User preferences
 
 - The user is coordinating three contributors in one shared project. Never rename shared types/routes or rewrite another contributor's area.
+- The user instructed: do not run tests.
 - Person 1 owns `server/index.ts`, `db.ts`, `seed.ts`, order/quote/payment/Paymob/upload/FX route files, `shared/contract.ts`, and the initial `client/src/App.tsx` shell.
 - Person 2 owns `server/routes/meshy.ts`, `catalog.ts`, and `client/src/buyer/**`, `client/src/quiz/**`. Person 3 owns `client/src/owner/**`.
-- Dependency/startup configuration changes were explicitly authorized to run the SQLite backend. Other frontend source remains unchanged.
+- Dependency/startup configuration changes were explicitly authorized to run the SQLite backend. The user subsequently authorized a cohesive public landing, quiz, estimates, buyer order, and admin review experience.
 
 ## Gotchas
 

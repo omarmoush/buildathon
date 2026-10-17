@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
 import Furniture3D from "./Furniture3D";
+import { EstimateCard } from "../quiz/EstimateCard";
+import { Link } from "wouter";
 import { api, ApiError } from "../quiz/api";
 import { demoCatalog, demoOrder } from "../quiz/demo";
 import type { BuyerOrder, Language } from "../quiz/types";
@@ -11,8 +13,9 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
   const token = suppliedToken || params.token || "";
   const base = `/api/b/${encodeURIComponent(token)}`;
   const demo = token === "demo-person2" && new URLSearchParams(location.search).get("demo") === "1";
-  const [lang, setLang] = useState<Language>("ar");
+  const [lang, setLang] = useState<Language>(() => localStorage.getItem("wasta-lang") === "en" ? "en" : "ar");
   const t = (ar: string, en: string) => lang === "ar" ? ar : en;
+  useEffect(() => { localStorage.setItem("wasta-lang", lang); }, [lang]);
   const [order, setOrder] = useState<BuyerOrder>();
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -126,7 +129,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
   const quoteExpired = !quote || !Number.isFinite(Date.parse(quote.expiresAt)) || Date.parse(quote.expiresAt) <= now;
   const stageOrder = ["requested", "design_review", "quoted", "deposit_paid", "in_production", "ready", "delivered", "closed"];
   return <div className="wb" dir={lang === "ar" ? "rtl" : "ltr"} lang={lang}>
-    <header><strong>{t("وسطى", "Wasta")}</strong><span>{t("طلبك الخاص", "Your private order")}</span><button onClick={() => setLang(lang === "ar" ? "en" : "ar")}>{lang === "ar" ? "English" : "العربية"}</button></header>
+    <header><Link className="wb-link" href="/"><strong>{t("وسطى", "Wasta")}</strong></Link><span>{t("طلبك الخاص", "Your private order")}</span><button onClick={() => setLang(lang === "ar" ? "en" : "ar")}>{lang === "ar" ? "English" : "العربية"}</button></header>
     <main>
       {demo && <section className="wb-notice"><p>{t("عرض تجريبي: لا توجد دفعات أو طلبات حقيقية.", "Demo: no real payments or orders.")}</p>
         <label>{t("معاينة مرحلة", "Preview a stage")}<select value={order?.status || "requested"} onChange={e => setOrder(current => {
@@ -169,6 +172,12 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
               {order.spec.notes && <p>{order.spec.notes}</p>}
             </section>
             {order.status === "requested" && <p className="wb-notice">{t("استلمت الورشة طلبك. ستراجع التفاصيل وترسل التصميم للموافقة.", "The workshop received your request and will share the design for approval.")}</p>}
+            {order.review && <section className="wb-card">
+              <h2>{t("مراجعة الورشة", "Workshop review")}</h2>
+              <p>{order.review.decision === "accepted" ? t("اعتمدت الورشة هذه المرحلة من الطلب.", "The workshop accepted this stage of the order.") : t("طلبت الورشة مراجعة التفاصيل التالية:", "The workshop requested these changes:")}</p>
+              {order.review.note && <p style={{ whiteSpace: "pre-wrap" }}>{order.review.note}</p>}
+              {order.review.decision === "changes_requested" && <p className="wb-muted">{t("تواصل مع الورشة لتأكيد التفاصيل قبل المتابعة.", "Contact the workshop to confirm the details before proceeding.")}</p>}
+            </section>}
             {order.status === "design_review" && <section className="wb-card"><h2>{t("راجع التصميم", "Review the design")}</h2>
               {order.designChangeNote && <p className="wb-notice">{t("التعديلات التي طلبتها:", "Your requested changes:")} {order.designChangeNote}</p>}
               {order.designApproved ? <p className="wb-badge">{t("اعتمدت التصميم. ننتظر عرض سعر الورشة.", "Design approved. Waiting for the workshop's quote.")}</p> : <>
@@ -199,6 +208,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
             {["cancelled", "expired"].includes(order.status) && <p className="wb-notice">{t("هذا الطلب غير متاح للدفع. تواصل مع الورشة لتجديده.", "This order is not payable. Contact the workshop to renew it.")}</p>}
           </section>
           <aside className="wb-stack">
+            {order.estimate && !quote && <EstimateCard estimate={order.estimate} lang={lang} saved />}
             {quote && <section className="wb-card"><h2>{t("عرض السعر", "Your quote")}</h2>
               <p className="wb-total">{money(quote.totalDisplay, quote.displayCurrency)}</p>
               <p className="wb-muted">{t("عملة العرض للاسترشاد فقط. الدفع يُحصّل بالجنيه المصري.", "Display currency is for reference only. Payments are charged in Egyptian pounds.")}</p>

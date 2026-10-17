@@ -27,6 +27,8 @@ import { DEFAULT_TARGET_MARGIN, DEMO_USD_RATE, needsAttention, quotePreview, quo
 import { QuizPage } from '@/quiz';
 import { BuyerPage as PublicBuyerPage } from '@/buyer';
 import { api as publicApi } from '@/quiz/api';
+import LandingPage from '@/landing/LandingPage';
+import { RequestReview, ReviewQueue } from '@/owner/RequestReview';
 
 type Language = 'ar' | 'en';
 const LanguageContext = createContext<{ lang: Language; setLang: (lang: Language) => void }>({ lang: 'ar', setLang: () => undefined });
@@ -167,7 +169,7 @@ function OwnerLogin() {
   const submit = (e: FormEvent) => {
     e.preventDefault(); setError('');
     login.mutate({ data: { phone: phone.trim(), pin } }, {
-      onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetOwnerSessionQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); setLocation('/'); },
+      onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetOwnerSessionQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); setLocation('/owner'); },
       onError: () => setError(tr('That phone number and PIN did not match.', 'رقم الهاتف أو الرقم السري غير صحيح.')),
     });
   };
@@ -212,14 +214,17 @@ function OwnerLogin() {
 function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopName: string }; onLogout: () => void }) {
   const t = useTranslation();
   const { lang } = useLanguage();
-  const dashboard = useGetDashboard({ query: { refetchInterval: 15000 } });
-  const ordersQuery = useListOrders({ query: { refetchInterval: 15000 } });
-  const notifications = useListNotifications({ query: { refetchInterval: 15000 } });
+  const dashboard = useGetDashboard({ query: { refetchInterval: 15000, queryKey: getGetDashboardQueryKey() } });
+  const ordersQuery = useListOrders({ query: { refetchInterval: 15000, queryKey: getListOrdersQueryKey() } });
+  const notifications = useListNotifications({ query: { refetchInterval: 15000, queryKey: getListNotificationsQueryKey() } });
   const [filter, setFilter] = useState('all');
   const [demoUsdRate, setDemoUsdRate] = useState(DEMO_USD_RATE);
   const [targetMargin, setTargetMargin] = useState(DEFAULT_TARGET_MARGIN);
   const orders = ordersQuery.data || dashboard.data?.orders || [];
-  const filtered = requestsFirst(filter === 'all' ? orders : orders.filter(o => o.status === filter));
+  const filtered = requestsFirst(filter === 'all' ? orders : filter === 'review'
+    ? orders.filter(o => ['requested', 'draft'].includes(o.status) || o.depositReviewPending)
+    : filter === 'deposited' ? orders.filter(o => o.payments.some(payment => payment.type === 'deposit' && payment.state !== 'pending'))
+    : orders.filter(o => o.status === filter));
   const refresh = () => { dashboard.refetch(); ordersQuery.refetch(); notifications.refetch(); };
   return <AppFrame>
     <Header ownerName={owner.workshopName || owner.name} onLogout={onLogout} showNotifications />
@@ -242,12 +247,13 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
           <strong className="font-display text-2xl text-primary" data-testid="text-released-money">{money(releasedMoney(orders))}</strong>
         </div>
         <DemoRateControl lang={lang} rate={demoUsdRate} target={targetMargin} onRateChange={setDemoUsdRate} onTargetChange={setTargetMargin} />
+        <ReviewQueue orders={orders} lang={lang} filter={filter} onFilter={setFilter} />
         <div className="mt-9 grid gap-6 lg:grid-cols-[1fr_290px]">
           <section className="surface overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between md:px-6">
               <div><h2 className="font-display text-xl font-bold">{t('Orders', 'الطلبات')}</h2><p className="mt-1 text-xs text-muted-foreground">{t(`${orders.length} orders on your bench`, `${orders.length} طلب على طاولتك`)}</p></div>
               <select aria-label={t('Filter orders', 'تصفية الطلبات')} data-testid="select-order-filter" className="input min-h-10 w-full py-2 sm:w-48" value={filter} onChange={e => setFilter(e.target.value)}>
-                <option value="all">{t('All orders', 'كل الطلبات')}</option><option value="requested">{t('Requested', 'طلب جديد')}</option><option value="draft">{t('New requests', 'طلبات جديدة')}</option><option value="design_review">{t('Design review', 'مراجعة التصميم')}</option><option value="quoted">{t('Quote sent', 'تم إرسال السعر')}</option><option value="deposit_paid">{t('Deposit paid', 'تم دفع العربون')}</option><option value="in_production">{t('In production', 'قيد التصنيع')}</option><option value="ready">{t('Ready for delivery', 'جاهز للتسليم')}</option><option value="closed">{t('Complete', 'مكتمل')}</option>
+                <option value="all">{t('All orders', 'كل الطلبات')}</option><option value="review">{t('Pending workshop review', 'تنتظر مراجعة الورشة')}</option><option value="deposited">{t('Deposited orders', 'طلبات بعربون')}</option><option value="requested">{t('Requested', 'طلب جديد')}</option><option value="draft">{t('New requests', 'طلبات جديدة')}</option><option value="design_review">{t('Design review', 'مراجعة التصميم')}</option><option value="quoted">{t('Quote sent', 'تم إرسال السعر')}</option><option value="deposit_paid">{t('Deposit paid', 'تم دفع العربون')}</option><option value="in_production">{t('In production', 'قيد التصنيع')}</option><option value="ready">{t('Ready for delivery', 'جاهز للتسليم')}</option><option value="closed">{t('Complete', 'مكتمل')}</option>
               </select>
             </div>
             {orders.length === 0 ? <EmptyOrders /> : filtered.length === 0 ? <div className="p-10 text-center text-sm text-muted-foreground">{t('No orders in this stage.', 'لا توجد طلبات في هذه المرحلة.')}</div> :
@@ -283,7 +289,7 @@ function OwnerGate({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const session = useGetOwnerSession({ query: { retry: false, queryKey: getGetOwnerSessionQueryKey() } });
   useEffect(() => {
-    if (!session.isLoading && !session.data && location !== '/') setLocation('/');
+    if (!session.isLoading && !session.data && location !== '/owner') setLocation('/owner');
   }, [location, session.data, session.isLoading, setLocation]);
   if (session.isLoading) return <LoadingScreen />;
   if (!session.data) return <LoadingScreen />;
@@ -317,7 +323,7 @@ function NewOrderPage() {
     } catch { setError(tr('The order could not be saved. Please try again.', 'تعذر حفظ الطلب. حاول مرة أخرى.')); }
   };
   return <OwnerGate><AppFrame><Header showNotifications /><div className="page-enter page-pad mx-auto max-w-4xl px-5 py-8 md:px-10 md:py-11">
-    <Link href="/" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('Back to orders', 'العودة للطلبات')}</Link>
+    <Link href="/owner" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('Back to orders', 'العودة للطلبات')}</Link>
     <div className="mb-7"><p className="text-sm font-semibold text-accent">{t('A good start', 'بداية واضحة')}</p><h1 className="font-display mt-1 text-3xl font-extrabold md:text-4xl">{t('Create a custom order', 'إنشاء طلب خاص')}</h1><p className="mt-2 text-sm text-muted-foreground">{t('Start with the buyer and the piece. You can add a design and quote next.', 'ابدأ ببيانات العميل والقطعة. يمكنك إضافة التصميم والسعر بعد ذلك.')}</p></div>
     <form onSubmit={onSubmit} className="surface p-5 md:p-8">
       <div className="mb-6 flex items-center gap-3 border-b border-border pb-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-secondary text-primary"><PackageCheck size={18} /></div><div><h2 className="font-display font-bold">{t('Order basics', 'بيانات الطلب')}</h2><p className="text-xs text-muted-foreground">{t('Only the essentials for now', 'المعلومات الأساسية الآن')}</p></div></div>
@@ -374,7 +380,7 @@ function OrderDetailContent({ order }: { order: Order }) {
   const [formError, setFormError] = useState('');
   const [quote, setQuote] = useState(() => {
     const currency = order.quote?.displayCurrency || suggestedCurrency(order.buyerCountry);
-    return { materials: '', labor: '', margin: '20', currency, fx: String(order.quote?.fxRateToEgp || demoFxRates[currency]), expires: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) };
+    return { materials: String(order.estimate?.materialsEgp ?? ''), labor: String(order.estimate?.laborEgp ?? ''), margin: String(order.estimate?.marginPercent ?? 25), deposit: String((order.estimate?.depositPercent ?? .5) * 100), currency, fx: String(order.quote?.fxRateToEgp || demoFxRates[currency]), expires: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) };
   });
   const [progress, setProgress] = useState({ stage: 'cutting', note: '' });
   const tokenUrl = buyerHref(order.magicToken);
@@ -408,7 +414,7 @@ function OrderDetailContent({ order }: { order: Order }) {
     e.preventDefault(); setFormError('');
     try {
       const expiresAt = quote.expires ? new Date(`${quote.expires}T23:59:59`).toISOString() : new Date(Date.now() + 7 * 86400000).toISOString();
-      await saveQuote.mutateAsync({ id: order.id, data: { materialsCostEgp: Number(quote.materials), laborCostEgp: Number(quote.labor), marginPercent: Number(quote.margin), displayCurrency: quote.currency, fxRateToEgp: Number(quote.fx), expiresAt } });
+      await saveQuote.mutateAsync({ id: order.id, data: { materialsCostEgp: Number(quote.materials), laborCostEgp: Number(quote.labor), marginPercent: Number(quote.margin), depositPercent: Number(quote.deposit) / 100, displayCurrency: quote.currency, fxRateToEgp: Number(quote.fx), expiresAt } });
       await invalidateOrder(); setQuoteOpen(false);
     } catch { setFormError(tr('Quote could not be saved. Check the amounts, exchange rate, and future expiry.', 'تعذر حفظ السعر. تحقق من المبالغ وسعر الصرف وتاريخ انتهاء مستقبلي.')); }
   };
@@ -423,9 +429,17 @@ function OrderDetailContent({ order }: { order: Order }) {
       await invalidateOrder(); setProgressOpen(false); setProgress({ stage: 'cutting', note: '' });
     } catch { setFormError(tr('Progress update could not be posted. Photos must be JPEG, PNG, WebP, or GIF under 8 MB.', 'تعذر نشر التحديث. استخدم صورة JPEG أو PNG أو WebP أو GIF أقل من ٨ ميجابايت.')); }
   };
-  const { totalEgp, totalDisplay, depositPercent, depositDisplay: depositAmountDisplay } = quotePreview(Number(quote.materials || 0), Number(quote.labor || 0), Number(quote.margin || 0), Number(quote.fx || 0));
+  const { totalEgp, totalDisplay } = quotePreview(Number(quote.materials || 0), Number(quote.labor || 0), Number(quote.margin || 0), Number(quote.fx || 0));
+  const depositPercent = Number(quote.deposit);
+  const depositAmountDisplay = Math.round(totalDisplay * depositPercent) / 100;
+  const openFinalQuote = () => {
+    setQuote(previous => ({ ...previous, materials: String(order.estimate?.materialsEgp ?? previous.materials),
+      labor: String(order.estimate?.laborEgp ?? previous.labor), margin: String(order.estimate?.marginPercent ?? previous.margin),
+      deposit: String((order.estimate?.depositPercent ?? .5) * 100) }));
+    setFormError(''); setQuoteOpen(true);
+  };
   return <AppFrame><Header showNotifications /><div className="page-enter page-pad mx-auto max-w-6xl px-5 py-7 md:px-10 md:py-10">
-    <Link href="/" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('All orders', 'كل الطلبات')}</Link>
+    <Link href="/owner" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('All orders', 'كل الطلبات')}</Link>
     <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
       <div><div className="mb-2 flex flex-wrap items-center gap-2"><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0]}</span><span className="text-xs text-muted-foreground">#{order.id.slice(0, 8)}</span></div><h1 className="font-display text-3xl font-extrabold tracking-tight md:text-4xl">{order.title}</h1><p className="mt-2 text-sm text-muted-foreground">{order.buyerName} · {order.buyerCountry} · {t('Created', 'تاريخ الإنشاء')} {dateShort(order.createdAt)}</p></div>
       <div className="flex flex-wrap gap-2">
@@ -435,6 +449,7 @@ function OrderDetailContent({ order }: { order: Order }) {
     </div>
     <div className="mt-7 grid gap-5 lg:grid-cols-[1.3fr_.7fr]">
       <div className="space-y-5">
+        <RequestReview order={order} lang={lang} onUpdated={invalidateOrder} />
         <section className="surface p-5 md:p-6"><div className="flex items-center justify-between"><div><h2 className="font-display text-lg font-bold">{t('Order details', 'تفاصيل الطلب')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('What the buyer asked for', 'تفاصيل طلب العميل')}</p></div><Hammer size={20} className="text-accent" /></div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2"><Detail label={t('Buyer', 'العميل')} value={order.buyerName} /><Detail label={t('WhatsApp', 'واتساب')} value={order.buyerPhone} /><Detail label={t('Dimensions', 'الأبعاد')} value={order.dimensions || '—'} /><Detail label={t('Description', 'الوصف')} value={order.description || '—'} /></div>
           <OrderSpecification order={order} lang={lang} />
@@ -447,10 +462,10 @@ function OrderDetailContent({ order }: { order: Order }) {
              {order.designChangeNote && <p className="mt-3 rounded-xl bg-accent/10 p-3 text-sm leading-6">{t('Buyer requested: ', 'طلب العميل: ')}{order.designChangeNote}</p>}
              {order.designApprovedAt && <p className="mt-3 rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-900">{t('The buyer approved this design.', 'اعتمد العميل هذا التصميم.')}</p>}
            </section>}
-           <section className="surface p-5 md:p-6"><div className="flex items-start justify-between"><div><h2 className="font-display text-lg font-bold">{t('Quote and payments', 'السعر والدفعات')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('Agree on price before starting the work.', 'اتفق على السعر قبل بدء التنفيذ.')}</p></div>{order.status === 'design_review' && order.designApprovedAt && !order.quote && <Button className="btn-outline min-h-9 px-3 py-2 text-xs" onClick={() => setQuoteOpen(true)} data-testid="button-edit-quote">{t('Prepare quote', 'إعداد السعر')}</Button>}</div>
+           <section className="surface p-5 md:p-6"><div className="flex items-start justify-between"><div><h2 className="font-display text-lg font-bold">{t('Quote and payments', 'السعر والدفعات')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('Agree on price before starting the work.', 'اتفق على السعر قبل بدء التنفيذ.')}</p></div>{order.status === 'design_review' && order.designApprovedAt && order.review?.decision !== 'changes_requested' && !order.quote && <Button className="btn-outline min-h-9 px-3 py-2 text-xs" onClick={openFinalQuote} data-testid="button-edit-quote">{t('Prepare quote', 'إعداد السعر')}</Button>}</div>
              {order.quote ? <div className="mt-5 rounded-xl bg-secondary/55 p-4"><div className="flex items-center justify-between"><span className="text-sm text-muted-foreground">{t('Total quote', 'إجمالي السعر')}</span><strong className="font-display text-2xl">{money(order.quote.totalDisplay, order.quote.displayCurrency)}</strong></div><div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border/70 pt-3 text-sm"><span className="text-muted-foreground">{t('Deposit', 'العربون')} · {formatDepositPercent(order.quote.depositPercent)}</span><strong>{money(order.quote.depositAmountDisplay, order.quote.displayCurrency)}</strong></div><div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{t('Expires', 'ينتهي')} {dateShort(order.quote.expiresAt)}</span><span>{t('Workshop equivalent', 'المعادل بالجنيه')} {money(order.quote.totalEgp)}</span></div></div> : <p className="mt-5 rounded-xl bg-muted p-4 text-sm text-muted-foreground">{order.designApprovedAt ? t('The design is approved. Prepare a quote to continue.', 'تم اعتماد التصميم. أعد السعر للمتابعة.') : t('Share a design and wait for buyer approval before sending a quote.', 'شارك التصميم وانتظر اعتماد العميل قبل إرسال السعر.')}</p>}
           </section>
-          <section className="surface p-5 md:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg font-bold">{t('Progress', 'التقدم')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('Let the buyer see the work taking shape.', 'أطلع العميل على تقدم العمل.')}</p></div>{['deposit_paid', 'in_production'].includes(order.status) && <Button className="btn-outline min-h-9 px-3 py-2 text-xs" onClick={() => setProgressOpen(true)} data-testid="button-add-progress"><Plus size={15} />{t('Post update', 'إضافة تحديث')}</Button>}</div>
+          <section className="surface p-5 md:p-6"><div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg font-bold">{t('Progress', 'التقدم')}</h2><p className="mt-1 text-xs text-muted-foreground">{order.depositReviewPending ? t('Accept the deposited order in workshop review before starting production.', 'اعتمد الطلب المدفوع في مراجعة الورشة قبل بدء التنفيذ.') : t('Let the buyer see the work taking shape.', 'أطلع العميل على تقدم العمل.')}</p></div>{['deposit_paid', 'in_production'].includes(order.status) && <Button className="btn-outline min-h-9 px-3 py-2 text-xs" disabled={order.depositReviewPending} onClick={() => setProgressOpen(true)} data-testid="button-add-progress"><Plus size={15} />{t('Post update', 'إضافة تحديث')}</Button>}</div>
             <ProgressTimeline updates={order.progress || []} />
           </section>
         </>}
@@ -484,11 +499,12 @@ function OrderDetailContent({ order }: { order: Order }) {
           <Field label={t('Buyer currency', 'عملة العميل')}><select data-testid="select-quote-currency" className="input" value={quote.currency} onChange={e => { const currency = e.target.value as Currency; setQuote(p => ({ ...p, currency, fx: String(demoFxRates[currency]) })); }}><option value="USD">USD</option><option value="SAR">SAR</option><option value="AED">AED</option><option value="EGP">EGP</option></select></Field>
         </div>
         <Field label={t('Exchange rate · EGP for 1 currency unit', 'سعر الصرف · جنيه لكل وحدة')} hint={t('Demo rate, locked when sent. Actual charges and the ledger are in EGP.', 'سعر تجريبي يُثبّت عند الإرسال. التحصيل والسجل بالجنيه المصري.')}><input data-testid="input-exchange-rate" className="input" type="number" min="0.01" step="0.01" required disabled={quote.currency === 'EGP'} value={quote.fx} onChange={e => setQuote(p => ({ ...p, fx: e.target.value }))} /></Field>
+        <Field label={t('Deposit · % of total', 'العربون · نسبة من الإجمالي')}><input data-testid="input-quote-deposit-percent" className="input" type="number" required min="1" max="100" step=".01" value={quote.deposit} onChange={e => setQuote(p => ({ ...p, deposit: e.target.value }))} /></Field>
         <Field label={t('Quote expiry', 'تاريخ انتهاء السعر')}><input data-testid="input-quote-expiry" className="input" type="date" required min={new Date().toISOString().slice(0, 10)} value={quote.expires} onChange={e => setQuote(p => ({ ...p, expires: e.target.value }))} /></Field>
         <div className="rounded-xl bg-secondary/70 p-4">
           <div className="flex justify-between gap-2 text-sm"><span className="text-muted-foreground">{t('Quoted total', 'السعر الإجمالي')}</span><strong data-testid="text-quote-total">{money(totalDisplay, quote.currency)}</strong></div>
           <p className="mt-1 text-xs text-muted-foreground">{money(totalEgp)} {t('before conversion', 'قبل التحويل')}</p>
-          <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground"><span>{t('Deposit · materials share', 'العربون · حصة الخامات')}</span><strong data-testid="text-quote-deposit">{money(depositAmountDisplay, quote.currency)} · {formatDepositPercent(depositPercent / 100)}</strong></div>
+          <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground"><span>{t('Deposit · chosen percentage', 'العربون · النسبة المحددة')}</span><strong data-testid="text-quote-deposit">{money(depositAmountDisplay, quote.currency)} · {formatDepositPercent(depositPercent / 100)}</strong></div>
         </div>
         <RateWhatIf lang={lang} materials={Number(quote.materials || 0)} labor={Number(quote.labor || 0)} total={totalEgp} />
         {formError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{formError}</p>}
@@ -621,7 +637,7 @@ function ClosedSummary({ order }: { order: Order }) {
 function Router() {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}><Switch>
-    <Route path="/" component={OwnerHome} />
+    <Route path="/" component={LandingPage} />
     <Route path="/owner" component={OwnerHome} />
     <Route path="/owner/orders/new" component={NewOrderPage} />
     <Route path="/owner/orders/:id" component={OrderDetailPage} />
@@ -629,7 +645,7 @@ function Router() {
     <Route path="/orders/:id" component={OrderDetailPage} />
     <Route path="/quiz" component={QuizPage} />
     <Route path="/w/reda" component={QuizPage} />
-    <Route path="/b/:token" component={PublicBuyerPage} />
+    <Route path="/b/:token">{params => <PublicBuyerPage token={params.token} />}</Route>
     <Route><NotFound /></Route>
   </Switch></ErrorBoundary>;
 }

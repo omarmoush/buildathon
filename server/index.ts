@@ -15,6 +15,7 @@ import { paymentsRouter } from "./routes/payments";
 import { paymobRouter } from "./routes/paymob";
 import { uploadsRouter } from "./routes/uploads";
 import { fxRouter } from "./routes/fx";
+import { estimatesRouter } from "./routes/estimates";
 
 export const logger = pino({
   redact: ["req.headers.authorization", "req.headers.cookie", "res.headers.set-cookie"],
@@ -36,7 +37,7 @@ app.use(express.json({ limit: "12mb" }), cookieParser());
 const demoImages = path.join(projectDirectory, "artifacts/api-server/uploads");
 app.use(["/uploads", "/api/uploads"], express.static(uploadDirectory), express.static(demoImages));
 app.get("/api/healthz", (_req, res) => { res.json({ status: "ok", database: "sqlite", payments: "unavailable" }); });
-app.use("/api", fxRouter, ordersRouter, quotesRouter, paymentsRouter, uploadsRouter, paymobRouter);
+app.use("/api", fxRouter, ordersRouter, quotesRouter, paymentsRouter, uploadsRouter, paymobRouter, estimatesRouter);
 
 // Person 2 retains ownership. New route files are mounted on restart, never rewritten.
 for (const [name, exportName] of [["catalog", "catalogRouter"], ["meshy", "meshyRouter"]] as const) {

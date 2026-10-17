@@ -17,5 +17,10 @@ export interface QuoteInput {
   displayCurrency: Currency;
   /** @exclusiveMinimum 0 */
   fxRateToEgp: number;
+  /**
+     * @maximum 1
+     * @exclusiveMinimum 0
+     */
+  depositPercent?: number;
   expiresAt: Date;
 }

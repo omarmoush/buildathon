@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import type { Order, OrderStatus, OrderSpec, Quote, Payment, ProgressUpdate, OrderImage, Notification } from "../shared/contract";
+import type { Order, OrderStatus, OrderSpec, Quote, Payment, ProgressUpdate, OrderImage, Notification, FurnitureEstimate, OrderReview } from "../shared/contract";
 
 // Both index.ts and bundled dist/index.js resolve to the same server directory.
 const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +59,17 @@ export function createDatabase(filename: string): Database.Database {
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
       audience TEXT NOT NULL CHECK(audience IN ('owner','buyer')), message TEXT NOT NULL, created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS order_estimates (
+      order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+      estimate_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS order_reviews (
+      order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      phase TEXT NOT NULL CHECK(phase IN ('request','deposit')),
+      decision TEXT NOT NULL CHECK(decision IN ('accepted','changes_requested')),
+      note TEXT NOT NULL DEFAULT '', reviewed_at TEXT NOT NULL,
+      PRIMARY KEY(order_id,phase)
     );
     CREATE INDEX IF NOT EXISTS orders_owner_created ON orders(owner_id,created_at);
     CREATE INDEX IF NOT EXISTS progress_order ON progress_updates(order_id,created_at);
@@ -130,11 +141,17 @@ export function getOrder(identifier: string, byToken = false) {
     created_at createdAt FROM progress_updates WHERE order_id=? ORDER BY created_at,id`).all(row.id) as ProgressUpdate[];
   const images = db.prepare(`SELECT id,order_id orderId,url,kind,created_at createdAt FROM order_images
     WHERE order_id=? ORDER BY created_at,id`).all(row.id) as OrderImage[];
+  const estimateRow = db.prepare("SELECT estimate_json FROM order_estimates WHERE order_id=?")
+    .get(row.id) as { estimate_json: string } | undefined;
+  const estimate = estimateRow ? JSON.parse(estimateRow.estimate_json) as FurnitureEstimate : null;
+  const hasDeposit = payments.some(payment => payment.type === "deposit" && payment.state !== "pending");
+  const review = (db.prepare(`SELECT phase,decision,note,reviewed_at reviewedAt FROM order_reviews
+    WHERE order_id=? AND phase=?`).get(row.id, hasDeposit ? "deposit" : "request") as OrderReview | undefined) ?? null;
   const result: Order = {
     id: row.id, ownerId: row.owner_id, buyerName: row.buyer_name, buyerPhone: row.buyer_phone,
     buyerCountry: row.buyer_country, spec: JSON.parse(row.spec_json) as OrderSpec,
     status: row.status, designApproved: !!row.design_approved, token: row.token, createdAt: row.created_at,
-    quote, payments, updates, images,
+    quote, payments, updates, images, estimate, review,
   };
   return {
     ...result, quote, payments: payments.map(payment => ({
@@ -145,6 +162,7 @@ export function getOrder(identifier: string, byToken = false) {
     title: row.title, description: row.description, dimensions: row.dimensions, magicToken: row.token,
     designApprovedAt: row.design_approved_at, designChangeNote: row.design_change_note, progress: updates,
     paymentMode: "unavailable" as const,
+    depositReviewPending: row.status === "deposit_paid" && hasDeposit && review?.decision !== "accepted",
   };
 }
 export function listOrders(ownerId = "reda") {

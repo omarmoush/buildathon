@@ -48,7 +48,7 @@ export default function PieceStep({ spec, patch, catalog, lang }: {
         ["customized", t("عدّل قطعة", "Customize"), t("اختر ثم غيّر الحجم والخامة", "Choose, then adjust size and materials")],
         ["generated", t("ولّد قطعة جديدة", "Generate new"), t("حوّل وصفك إلى نموذج ثلاثي الأبعاد", "Turn your prompt into a 3D model")],
       ] as const).map(([source, title, subtitle]) => <button key={source} className="wb-card" aria-pressed={spec.pieceSource === source}
-        onClick={() => patch({ pieceSource: source, catalogItemId: undefined, glbUrl: undefined, usdzUrl: undefined, thumbnailUrl: undefined, prompt: undefined, generationTaskId: undefined })}>
+        onClick={() => { if (spec.pieceSource !== source) patch({ pieceSource: source, catalogItemId: undefined, glbUrl: undefined, usdzUrl: undefined, thumbnailUrl: undefined, prompt: undefined, generationTaskId: undefined }); }}>
         <strong>{title}</strong><small>{subtitle}</small>
       </button>)}
     </div>

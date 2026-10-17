@@ -4,6 +4,28 @@ export type OrderStatus = "requested" | "design_review" | "quoted" | "deposit_pa
 export type Currency = "EGP" | "SAR" | "AED" | "USD";
 export type PaymentType = "deposit" | "balance";
 export interface Dimensions { w: number; d: number; h: number }
+export interface FurnitureEstimate {
+  currency: "EGP";
+  totalEgp: number;
+  lowEgp: number;
+  highEgp: number;
+  depositPercent: number;
+  depositEgp: number;
+  materialsEgp: number;
+  laborEgp: number;
+  marginPercent: number;
+  items: { key: string; label: string; labelAr: string; quantity: number; amountEgp: number }[];
+  pricingVersion: string;
+  createdAt: string;
+  indicative: true;
+  excludes: string[];
+}
+export interface OrderReview {
+  phase: "request" | "deposit";
+  decision: "accepted" | "changes_requested";
+  note: string;
+  reviewedAt: string;
+}
 export interface OrderSpec {
   productType: string;
   style: string[];
@@ -58,6 +80,8 @@ export interface Order {
   spec: OrderSpec; status: OrderStatus; designApproved: boolean;
   token: string; createdAt: string; quote: Quote | null;
   payments: Payment[]; updates: ProgressUpdate[]; images: OrderImage[];
+  estimate?: FurnitureEstimate | null;
+  review?: OrderReview | null;
 }
 export interface CreateOrderInput {
   buyerName: string; buyerPhone: string; buyerCountry: string; spec: OrderSpec;

@@ -9,6 +9,271 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Calculate an indicative EGP furniture estimate; not a payable quote
+ */
+export const estimateFurnitureBodySpecDimensionsWMin = 10;
+export const estimateFurnitureBodySpecDimensionsWMax = 600;
+
+export const estimateFurnitureBodySpecDimensionsDMin = 10;
+export const estimateFurnitureBodySpecDimensionsDMax = 600;
+
+export const estimateFurnitureBodySpecDimensionsHMin = 10;
+export const estimateFurnitureBodySpecDimensionsHMax = 600;
+
+
+
+export const EstimateFurnitureBody = zod.object({
+  "spec": zod.object({
+  "productType": zod.string(),
+  "pieceSource": zod.enum(['catalog', 'customized', 'generated']),
+  "catalogItemId": zod.string().optional(),
+  "dimensions": zod.object({
+  "w": zod.number().min(estimateFurnitureBodySpecDimensionsWMin).max(estimateFurnitureBodySpecDimensionsWMax),
+  "d": zod.number().min(estimateFurnitureBodySpecDimensionsDMin).max(estimateFurnitureBodySpecDimensionsDMax),
+  "h": zod.number().min(estimateFurnitureBodySpecDimensionsHMin).max(estimateFurnitureBodySpecDimensionsHMax)
+}),
+  "wood": zod.string().optional(),
+  "finish": zod.string().optional(),
+  "style": zod.array(zod.string()).optional(),
+  "bedroomPieces": zod.array(zod.enum(['bed', 'nightstands', 'wardrobe', 'dresser'])).optional()
+})
+})
+
+export const EstimateFurnitureResponse = zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Owner review of a new request or a verified-deposit order
+ */
+export const ReviewOrderRequestParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const reviewOrderRequestBodyNoteMax = 2000;
+
+
+
+export const ReviewOrderRequestBody = zod.object({
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string().max(reviewOrderRequestBodyNoteMax).optional()
+})
+
+export const ReviewOrderRequestResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
+  "id": zod.string(),
+  "ownerId": zod.string(),
+  "ownerName": zod.string(),
+  "ownerPhone": zod.string(),
+  "workshopName": zod.string(),
+  "buyerName": zod.string(),
+  "buyerPhone": zod.string(),
+  "buyerCountry": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "dimensions": zod.string(),
+  "status": zod.enum(['draft', 'design_review', 'quoted', 'deposit_paid', 'in_production', 'ready', 'delivered', 'closed', 'cancelled', 'expired']),
+  "magicToken": zod.string(),
+  "designApprovedAt": zod.coerce.date().nullable(),
+  "designChangeNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "images": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "kind": zod.enum(['reference', 'design']),
+  "createdAt": zod.coerce.date()
+})),
+  "quote": zod.union([zod.object({
+  "materialsCostEgp": zod.number(),
+  "laborCostEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "totalEgp": zod.number(),
+  "displayCurrency": zod.enum(['EGP', 'SAR', 'AED', 'USD']),
+  "fxRateToEgp": zod.number(),
+  "totalDisplay": zod.number(),
+  "depositPercent": zod.number(),
+  "depositAmountDisplay": zod.number(),
+  "expiresAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional(),
+  "payments": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['deposit', 'balance']),
+  "amountDisplay": zod.number(),
+  "currency": zod.enum(['EGP', 'SAR', 'AED', 'USD']),
+  "amountEgp": zod.number(),
+  "state": zod.enum(['pending', 'held', 'released']),
+  "createdAt": zod.coerce.date()
+})),
+  "progress": zod.array(zod.object({
+  "id": zod.string(),
+  "stage": zod.string(),
+  "note": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Owner saves an indicative estimate before the final quote is locked
+ */
+export const SaveOrderEstimateParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const saveOrderEstimateBodyMaterialsEgpMin = 0;
+
+export const saveOrderEstimateBodyLaborEgpMin = 0;
+
+export const saveOrderEstimateBodyMarginPercentMin = 0;
+export const saveOrderEstimateBodyMarginPercentMax = 1000;
+
+export const saveOrderEstimateBodyDepositPercentExclusiveMin = 0;
+export const saveOrderEstimateBodyDepositPercentMax = 1;
+
+
+
+export const SaveOrderEstimateBody = zod.object({
+  "materialsEgp": zod.number().min(saveOrderEstimateBodyMaterialsEgpMin),
+  "laborEgp": zod.number().min(saveOrderEstimateBodyLaborEgpMin),
+  "marginPercent": zod.number().min(saveOrderEstimateBodyMarginPercentMin).max(saveOrderEstimateBodyMarginPercentMax),
+  "depositPercent": zod.number().gt(saveOrderEstimateBodyDepositPercentExclusiveMin).max(saveOrderEstimateBodyDepositPercentMax).optional()
+})
+
+export const SaveOrderEstimateResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
+  "id": zod.string(),
+  "ownerId": zod.string(),
+  "ownerName": zod.string(),
+  "ownerPhone": zod.string(),
+  "workshopName": zod.string(),
+  "buyerName": zod.string(),
+  "buyerPhone": zod.string(),
+  "buyerCountry": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "dimensions": zod.string(),
+  "status": zod.enum(['draft', 'design_review', 'quoted', 'deposit_paid', 'in_production', 'ready', 'delivered', 'closed', 'cancelled', 'expired']),
+  "magicToken": zod.string(),
+  "designApprovedAt": zod.coerce.date().nullable(),
+  "designChangeNote": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "images": zod.array(zod.object({
+  "id": zod.string(),
+  "url": zod.string(),
+  "kind": zod.enum(['reference', 'design']),
+  "createdAt": zod.coerce.date()
+})),
+  "quote": zod.union([zod.object({
+  "materialsCostEgp": zod.number(),
+  "laborCostEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "totalEgp": zod.number(),
+  "displayCurrency": zod.enum(['EGP', 'SAR', 'AED', 'USD']),
+  "fxRateToEgp": zod.number(),
+  "totalDisplay": zod.number(),
+  "depositPercent": zod.number(),
+  "depositAmountDisplay": zod.number(),
+  "expiresAt": zod.coerce.date(),
+  "approvedAt": zod.coerce.date().nullish()
+}),zod.null()]).optional(),
+  "payments": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['deposit', 'balance']),
+  "amountDisplay": zod.number(),
+  "currency": zod.enum(['EGP', 'SAR', 'AED', 'USD']),
+  "amountEgp": zod.number(),
+  "state": zod.enum(['pending', 'held', 'released']),
+  "createdAt": zod.coerce.date()
+})),
+  "progress": zod.array(zod.object({
+  "id": zod.string(),
+  "stage": zod.string(),
+  "note": zod.string(),
+  "photoUrl": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -66,6 +331,35 @@ export const GetDashboardResponse = zod.object({
   "depositsCollectedEgp": zod.number(),
   "balancesDueEgp": zod.number(),
   "orders": zod.array(zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -132,6 +426,35 @@ export const GetDashboardResponse = zod.object({
  * @summary List workshop orders
  */
 export const ListOrdersResponseItem = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -207,6 +530,35 @@ export const CreateOrderBody = zod.object({
 })
 
 export const CreateOrderResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -286,6 +638,35 @@ export const GetOrderParams = zod.object({
 })
 
 export const GetOrderResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -379,6 +760,35 @@ export const SubmitDesignBody = zod.object({
 })
 
 export const SubmitDesignResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -448,6 +858,9 @@ export const saveQuoteBodyMarginPercentMin = 0;
 
 export const saveQuoteBodyFxRateToEgpExclusiveMin = 0;
 
+export const saveQuoteBodyDepositPercentExclusiveMin = 0;
+export const saveQuoteBodyDepositPercentMax = 1;
+
 
 
 export const SaveQuoteBody = zod.object({
@@ -456,10 +869,40 @@ export const SaveQuoteBody = zod.object({
   "marginPercent": zod.number().min(saveQuoteBodyMarginPercentMin),
   "displayCurrency": zod.enum(['EGP', 'SAR', 'AED', 'USD']),
   "fxRateToEgp": zod.number().gt(saveQuoteBodyFxRateToEgpExclusiveMin),
+  "depositPercent": zod.number().gt(saveQuoteBodyDepositPercentExclusiveMin).max(saveQuoteBodyDepositPercentMax).optional(),
   "expiresAt": zod.coerce.date()
 })
 
 export const SaveQuoteResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -531,6 +974,35 @@ export const PostProgressBody = zod.object({
 })
 
 export const PostProgressResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -593,6 +1065,35 @@ export const MarkOrderReadyParams = zod.object({
 })
 
 export const MarkOrderReadyResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -668,6 +1169,35 @@ export const GetBuyerOrderParams = zod.object({
 })
 
 export const GetBuyerOrderResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -735,6 +1265,35 @@ export const DecideOnDesignBody = zod.object({
 })
 
 export const DecideOnDesignResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -801,6 +1360,35 @@ export const PayDepositBody = zod.object({
 })
 
 export const PayDepositResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),
@@ -867,6 +1455,35 @@ export const ConfirmDeliveryBody = zod.object({
 })
 
 export const ConfirmDeliveryResponse = zod.object({
+  "estimate": zod.union([zod.object({
+  "currency": zod.enum(['EGP']),
+  "totalEgp": zod.number(),
+  "lowEgp": zod.number(),
+  "highEgp": zod.number(),
+  "depositPercent": zod.number(),
+  "depositEgp": zod.number(),
+  "materialsEgp": zod.number(),
+  "laborEgp": zod.number(),
+  "marginPercent": zod.number(),
+  "items": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "quantity": zod.number().int(),
+  "amountEgp": zod.number()
+})),
+  "pricingVersion": zod.string(),
+  "createdAt": zod.string(),
+  "indicative": zod.boolean(),
+  "excludes": zod.array(zod.string())
+}),zod.null()]).optional(),
+  "review": zod.union([zod.object({
+  "phase": zod.enum(['request', 'deposit']),
+  "decision": zod.enum(['accepted', 'changes_requested']),
+  "note": zod.string(),
+  "reviewedAt": zod.string()
+}),zod.null()]).optional(),
+  "depositReviewPending": zod.boolean().optional(),
   "id": zod.string(),
   "ownerId": zod.string(),
   "ownerName": zod.string(),

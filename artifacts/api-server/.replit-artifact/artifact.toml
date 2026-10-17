@@ -12,15 +12,18 @@ paths = ["/api", "/uploads"]
 [services.development]
 run = "pnpm --filter @workspace/api-server run dev"
 
-[services.production]
 [services.production.build]
 args = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+
 [services.production.build.env]
 NODE_ENV = "production"
+
 [services.production.run]
 args = ["pnpm", "--filter", "@workspace/wasta-server", "run", "start"]
+
 [services.production.run.env]
 PORT = "8080"
 NODE_ENV = "production"
+
 [services.production.health.startup]
 path = "/api/healthz"

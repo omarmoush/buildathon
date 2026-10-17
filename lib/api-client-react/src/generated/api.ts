@@ -24,6 +24,8 @@ import type {
   DesignDecisionInput,
   DesignInput,
   Error,
+  FurnitureEstimate,
+  FurnitureEstimateInput,
   HealthStatus,
   LoginInput,
   Message,
@@ -32,12 +34,14 @@ import type {
   OrderImage,
   OrderImageInput,
   OrderInput,
+  OrderReviewInput,
   Owner,
   PaymentInput,
   ProgressInput,
   QuoteInput,
   UploadInput,
-  UploadResult
+  UploadResult,
+  WorkshopEstimateInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -66,6 +70,272 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getEstimateFurnitureUrl = () => {
+
+
+
+
+  return `/api/estimates`
+}
+
+/**
+ * @summary Calculate an indicative EGP furniture estimate; not a payable quote
+ */
+export const estimateFurniture = async (furnitureEstimateInput: FurnitureEstimateInput, options?: Parameters<typeof customFetch>[1]): Promise<FurnitureEstimate> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<FurnitureEstimate>(getEstimateFurnitureUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(furnitureEstimateInput)
+  }
+);}
+
+
+
+
+
+export const getEstimateFurnitureMutationKey = () => ['estimateFurniture'] as const;
+
+export const getEstimateFurnitureMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof estimateFurniture>>, TError,EstimateFurnitureMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof estimateFurniture>>, TError,EstimateFurnitureMutationVariables, TContext> => {
+
+const mutationKey = getEstimateFurnitureMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof estimateFurniture>>, EstimateFurnitureMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  estimateFurniture(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EstimateFurnitureMutationResult = NonNullable<Awaited<ReturnType<typeof estimateFurniture>>>
+    export type EstimateFurnitureMutationBody = BodyType<FurnitureEstimateInput>
+    export type EstimateFurnitureMutationError = ErrorType<unknown>
+    export type EstimateFurnitureMutationVariables = {data: BodyType<FurnitureEstimateInput>}
+
+    /**
+ * @summary Calculate an indicative EGP furniture estimate; not a payable quote
+ */
+export const useEstimateFurniture = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof estimateFurniture>>, TError,EstimateFurnitureMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof estimateFurniture>>,
+        TError,
+        EstimateFurnitureMutationVariables,
+        TContext
+      > => {
+      return useMutation(getEstimateFurnitureMutationOptions(options));
+    }
+
+export const getReviewOrderRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/orders/${id}/review`
+}
+
+/**
+ * @summary Owner review of a new request or a verified-deposit order
+ */
+export const reviewOrderRequest = async (id: string,
+    orderReviewInput: OrderReviewInput, options?: Parameters<typeof customFetch>[1]): Promise<Order> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Order>(getReviewOrderRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(orderReviewInput)
+  }
+);}
+
+
+
+
+
+export const getReviewOrderRequestMutationKey = () => ['reviewOrderRequest'] as const;
+
+export const getReviewOrderRequestMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewOrderRequest>>, TError,ReviewOrderRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewOrderRequest>>, TError,ReviewOrderRequestMutationVariables, TContext> => {
+
+const mutationKey = getReviewOrderRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewOrderRequest>>, ReviewOrderRequestMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reviewOrderRequest(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewOrderRequestMutationResult = NonNullable<Awaited<ReturnType<typeof reviewOrderRequest>>>
+    export type ReviewOrderRequestMutationBody = BodyType<OrderReviewInput>
+    export type ReviewOrderRequestMutationError = ErrorType<unknown>
+    export type ReviewOrderRequestMutationVariables = {id: string;data: BodyType<OrderReviewInput>}
+
+    /**
+ * @summary Owner review of a new request or a verified-deposit order
+ */
+export const useReviewOrderRequest = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewOrderRequest>>, TError,ReviewOrderRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewOrderRequest>>,
+        TError,
+        ReviewOrderRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReviewOrderRequestMutationOptions(options));
+    }
+
+export const getSaveOrderEstimateUrl = (id: string,) => {
+
+
+
+
+  return `/api/orders/${id}/estimate`
+}
+
+/**
+ * @summary Owner saves an indicative estimate before the final quote is locked
+ */
+export const saveOrderEstimate = async (id: string,
+    workshopEstimateInput: WorkshopEstimateInput, options?: Parameters<typeof customFetch>[1]): Promise<Order> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<Order>(getSaveOrderEstimateUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(workshopEstimateInput)
+  }
+);}
+
+
+
+
+
+export const getSaveOrderEstimateMutationKey = () => ['saveOrderEstimate'] as const;
+
+export const getSaveOrderEstimateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveOrderEstimate>>, TError,SaveOrderEstimateMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveOrderEstimate>>, TError,SaveOrderEstimateMutationVariables, TContext> => {
+
+const mutationKey = getSaveOrderEstimateMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveOrderEstimate>>, SaveOrderEstimateMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveOrderEstimate(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveOrderEstimateMutationResult = NonNullable<Awaited<ReturnType<typeof saveOrderEstimate>>>
+    export type SaveOrderEstimateMutationBody = BodyType<WorkshopEstimateInput>
+    export type SaveOrderEstimateMutationError = ErrorType<unknown>
+    export type SaveOrderEstimateMutationVariables = {id: string;data: BodyType<WorkshopEstimateInput>}
+
+    /**
+ * @summary Owner saves an indicative estimate before the final quote is locked
+ */
+export const useSaveOrderEstimate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveOrderEstimate>>, TError,SaveOrderEstimateMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveOrderEstimate>>,
+        TError,
+        SaveOrderEstimateMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveOrderEstimateMutationOptions(options));
+    }
 
 export const getHealthCheckUrl = () => {
 
