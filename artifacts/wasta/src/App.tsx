@@ -18,6 +18,10 @@ import type { Currency, Order, OrderInput, OrderStatus, PaymentInputMethod } fro
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { DemoRateControl, MarginWarning, RateWhatIf } from '@/owner/RateTools';
+import { OrderSpecification } from '@/owner/OrderSpecification';
+import { OwnerDialog } from '@/owner/OwnerDialog';
+import { DEFAULT_TARGET_MARGIN, DEMO_USD_RATE, needsAttention, quotePreview, quoteRisk, releasedMoney, requestsFirst } from '@/owner/quote-math';
 
 type Language = 'ar' | 'en';
 const LanguageContext = createContext<{ lang: Language; setLang: (lang: Language) => void }>({ lang: 'ar', setLang: () => undefined });
@@ -139,6 +143,7 @@ function OwnerDashboard({ owner }: { owner: { name: string; workshopName: string
 }
 function OwnerLogin() {
   const { lang } = useLanguage();
+  const tr = (en: string, ar: string) => lang === 'ar' ? ar : en;
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const login = useLoginOwner();
@@ -151,7 +156,7 @@ function OwnerLogin() {
     e.preventDefault(); setError('');
     login.mutate({ data: { phone: phone.trim(), pin } }, {
       onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetOwnerSessionQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); setLocation('/'); },
-      onError: () => setError(t('That phone number and PIN did not match.', 'رقم الهاتف أو الرقم السري غير صحيح.')),
+      onError: () => setError(tr('That phone number and PIN did not match.', 'رقم الهاتف أو الرقم السري غير صحيح.')),
     });
   };
   return <AppFrame className="min-h-[100dvh]">
@@ -193,13 +198,16 @@ function OwnerLogin() {
 }
 
 function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopName: string }; onLogout: () => void }) {
+  const { lang } = useLanguage();
   const dashboard = useGetDashboard();
   const ordersQuery = useListOrders();
   const notifications = useListNotifications();
   const [filter, setFilter] = useState('all');
+  const [demoUsdRate, setDemoUsdRate] = useState(DEMO_USD_RATE);
+  const [targetMargin, setTargetMargin] = useState(DEFAULT_TARGET_MARGIN);
   const orders = ordersQuery.data || dashboard.data?.orders || [];
-  const filtered = filter === 'all' ? orders : orders.filter(o => o.status === filter);
-  const refresh = () => { dashboard.refetch(); notifications.refetch(); };
+  const filtered = requestsFirst(filter === 'all' ? orders : orders.filter(o => o.status === filter));
+  const refresh = () => { dashboard.refetch(); ordersQuery.refetch(); notifications.refetch(); };
   return <AppFrame>
     <Header ownerName={owner.workshopName || owner.name} onLogout={onLogout} showNotifications />
     <div className="page-enter page-pad mx-auto max-w-6xl px-5 py-8 md:px-10 md:py-11">
@@ -213,19 +221,24 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
             <div className="flex items-start justify-between"><span className="text-sm font-semibold opacity-80">{t('Orders in progress', 'طلبات قيد التنفيذ')}</span><PackageCheck size={19} /></div>
             <p className="mt-6 font-display text-4xl font-extrabold" data-testid="text-open-orders">{dashboard.data?.openOrders ?? 0}</p><p className="mt-1 text-xs opacity-70">{t('Your active workshop list', 'طلبات الورشة النشطة')}</p>
           </div>
-          <div className="surface p-5 md:p-6"><div className="flex items-start justify-between text-muted-foreground"><span className="text-sm font-semibold">{t('Deposits collected', 'العربون المحصل')}</span><div className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-primary"><ArrowDownLeft size={17} /></div></div><p className="mt-5 font-display text-3xl font-extrabold" data-testid="text-deposits-collected">{money(dashboard.data?.depositsCollectedEgp)}</p><p className="mt-1 text-xs text-muted-foreground">{t('Held safely until handover', 'محفوظ حتى التسليم')}</p></div>
+          <div className="surface p-5 md:p-6"><div className="flex items-start justify-between text-muted-foreground"><span className="text-sm font-semibold">{t('Deposits collected', 'العربون المحصل')}</span><div className="grid h-9 w-9 place-items-center rounded-xl bg-secondary text-primary"><ArrowDownLeft size={17} /></div></div><p className="mt-5 font-display text-3xl font-extrabold" data-testid="text-deposits-collected">{money(dashboard.data?.depositsCollectedEgp)}</p><p className="mt-1 text-xs text-muted-foreground">{t('Held or released · simulated ledger', 'محفوظ أو مُحرّر · سجل تجريبي')}</p></div>
           <div className="surface p-5 md:p-6"><div className="flex items-start justify-between text-muted-foreground"><span className="text-sm font-semibold">{t('Balances to collect', 'المتبقي للتحصيل')}</span><div className="grid h-9 w-9 place-items-center rounded-xl bg-accent/15 text-accent"><Clock3 size={17} /></div></div><p className="mt-5 font-display text-3xl font-extrabold" data-testid="text-balances-due">{money(dashboard.data?.balancesDueEgp)}</p><p className="mt-1 text-xs text-muted-foreground">{t('Due at delivery', 'مستحق عند التسليم')}</p></div>
         </div>
+        <div className="surface mt-4 flex flex-wrap items-center justify-between gap-2 p-5">
+          <div><h2 className="text-sm font-bold">{t('Money released to workshop', 'المبالغ المُحرّرة للورشة')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('Released deposits and balances · simulated, not a bank transfer', 'العربون والمتبقي المُحرّران · محاكاة وليست تحويلاً بنكياً')}</p></div>
+          <strong className="font-display text-2xl text-primary" data-testid="text-released-money">{money(releasedMoney(orders))}</strong>
+        </div>
+        <DemoRateControl lang={lang} rate={demoUsdRate} target={targetMargin} onRateChange={setDemoUsdRate} onTargetChange={setTargetMargin} />
         <div className="mt-9 grid gap-6 lg:grid-cols-[1fr_290px]">
           <section className="surface overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-border px-5 py-5 sm:flex-row sm:items-center sm:justify-between md:px-6">
               <div><h2 className="font-display text-xl font-bold">{t('Orders', 'الطلبات')}</h2><p className="mt-1 text-xs text-muted-foreground">{t(`${orders.length} orders on your bench`, `${orders.length} طلب على طاولتك`)}</p></div>
               <select aria-label={t('Filter orders', 'تصفية الطلبات')} data-testid="select-order-filter" className="input min-h-10 w-full py-2 sm:w-48" value={filter} onChange={e => setFilter(e.target.value)}>
-                <option value="all">{t('All orders', 'كل الطلبات')}</option><option value="design_review">{t('Design review', 'مراجعة التصميم')}</option><option value="quoted">{t('Quote sent', 'تم إرسال السعر')}</option><option value="in_production">{t('In production', 'قيد التصنيع')}</option><option value="ready">{t('Ready for delivery', 'جاهز للتسليم')}</option><option value="closed">{t('Complete', 'مكتمل')}</option>
+                <option value="all">{t('All orders', 'كل الطلبات')}</option><option value="draft">{t('New requests', 'طلبات جديدة')}</option><option value="design_review">{t('Design review', 'مراجعة التصميم')}</option><option value="quoted">{t('Quote sent', 'تم إرسال السعر')}</option><option value="deposit_paid">{t('Deposit paid', 'تم دفع العربون')}</option><option value="in_production">{t('In production', 'قيد التصنيع')}</option><option value="ready">{t('Ready for delivery', 'جاهز للتسليم')}</option><option value="closed">{t('Complete', 'مكتمل')}</option>
               </select>
             </div>
             {orders.length === 0 ? <EmptyOrders /> : filtered.length === 0 ? <div className="p-10 text-center text-sm text-muted-foreground">{t('No orders in this stage.', 'لا توجد طلبات في هذه المرحلة.')}</div> :
-              <div>{filtered.map(order => <OrderRow key={order.id} order={order} />)}</div>}
+              <div>{filtered.map(order => <OrderRow key={order.id} order={order} risk={quoteRisk(order, demoUsdRate, targetMargin)} />)}</div>}
           </section>
           <aside className="surface h-fit overflow-hidden">
             <div className="flex items-center justify-between border-b border-border px-5 py-5"><div><h2 className="font-display font-bold">{t('Latest updates', 'آخر التحديثات')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('Order activity', 'نشاط الطلبات')}</p></div><Bell size={18} className="text-accent" /></div>
@@ -241,11 +254,11 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
 function EmptyOrders() {
   return <div className="p-8 text-center md:p-14"><div className="mx-auto grid h-16 w-16 place-items-center rounded-[22px] bg-secondary text-primary"><Hammer size={27} /></div><h3 className="font-display mt-4 text-xl font-bold">{t('Your first order starts here', 'ابدأ أول طلب من هنا')}</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">{t('Add the buyer and the piece they have in mind. We’ll help you keep the steps clear.', 'أضف بيانات العميل والقطعة التي يريدها. وسنساعدك على توضيح كل خطوة.')}</p><Link href="/orders/new" className="btn btn-primary mt-5" data-testid="link-first-order"><Plus size={17} />{t('Create an order', 'أنشئ طلباً')}</Link></div>;
 }
-function OrderRow({ order }: { order: Order }) {
+function OrderRow({ order, risk }: { order: Order; risk: ReturnType<typeof quoteRisk> }) {
   const { lang } = useLanguage();
   return <Link href={`/orders/${order.id}`} data-testid={`link-order-${order.id}`} className="clickable-row flex items-center gap-4 border-b border-border px-5 py-4 text-inherit no-underline last:border-0 md:px-6">
     <div className="hidden h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-secondary sm:block">{order.images?.[0]?.url ? <img src={order.images[0].url} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-primary"><FileImage size={19} /></div>}</div>
-    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-semibold">{order.title}</h3><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0] || order.status}</span></div><p className="mt-1 truncate text-xs text-muted-foreground">{order.buyerName} · {order.buyerCountry} · {dateShort(order.createdAt)}</p></div>
+    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-semibold">{order.title}</h3><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0] || order.status}</span>{needsAttention(order) && <span className="status-pill status-orange" data-testid="badge-new-request">{t('New request · start here', 'طلب جديد · ابدأ هنا')}</span>}</div><p className="mt-1 truncate text-xs text-muted-foreground">{order.buyerName} · {order.buyerCountry} · {dateShort(order.createdAt)}</p>{risk?.belowTarget && <div className="mt-2"><MarginWarning lang={lang} margin={risk.marginPercent} /></div>}</div>
     <div className="hidden text-end sm:block"><p className="font-semibold">{order.quote ? money(order.quote.totalDisplay, order.quote.displayCurrency) : t('Awaiting quote', 'بانتظار السعر')}</p><p className="mt-1 text-xs text-muted-foreground">{order.progress?.length || 0} {t('updates', 'تحديثات')}</p></div>
     <ArrowLeft className="shrink-0 text-muted-foreground rtl:rotate-180" size={18} />
   </Link>;
@@ -262,6 +275,8 @@ function OwnerGate({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 function NewOrderPage() {
+  const { lang } = useLanguage();
+  const tr = (en: string, ar: string) => lang === 'ar' ? ar : en;
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const createOrder = useCreateOrder();
@@ -283,7 +298,7 @@ function NewOrderPage() {
       }
       await Promise.all([queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() }), queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }), queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(order.id) })]);
       setLocation(`/orders/${order.id}`);
-    } catch { setError(t('The order could not be saved. Please try again.', 'تعذر حفظ الطلب. حاول مرة أخرى.')); }
+    } catch { setError(tr('The order could not be saved. Please try again.', 'تعذر حفظ الطلب. حاول مرة أخرى.')); }
   };
   return <OwnerGate><AppFrame><Header showNotifications /><div className="page-enter page-pad mx-auto max-w-4xl px-5 py-8 md:px-10 md:py-11">
     <Link href="/" className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('Back to orders', 'العودة للطلبات')}</Link>
@@ -325,6 +340,7 @@ function OrderDetailAuthed() {
 }
 function OrderDetailContent({ order }: { order: Order }) {
   const { lang } = useLanguage();
+  const tr = (en: string, ar: string) => lang === 'ar' ? ar : en;
   const queryClient = useQueryClient();
   const upload = useUploadImage();
   const submitDesign = useSubmitDesign();
@@ -339,12 +355,18 @@ function OrderDetailContent({ order }: { order: Order }) {
   const [formError, setFormError] = useState('');
   const [quote, setQuote] = useState(() => {
     const currency = order.quote?.displayCurrency || suggestedCurrency(order.buyerCountry);
-    return { materials: '', labor: '', margin: '20', currency, fx: String(order.quote?.fxRateToEgp || demoFxRates[currency]), expires: '' };
+    return { materials: '', labor: '', margin: '20', currency, fx: String(order.quote?.fxRateToEgp || demoFxRates[currency]), expires: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) };
   });
-  const [progress, setProgress] = useState({ stage: '', note: '' });
+  const [progress, setProgress] = useState({ stage: 'cutting', note: '' });
   const tokenUrl = buyerHref(order.magicToken);
   const invalidateOrder = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(order.id) }), queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }), queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() }), queryClient.invalidateQueries({ queryKey: getListNotificationsQueryKey() })]); };
-  const copyLink = async () => { await navigator.clipboard?.writeText(tokenUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 1800); };
+  const copyLink = async () => {
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(tokenUrl);
+      setShareCopied(true); setTimeout(() => setShareCopied(false), 1800);
+    } catch { setFormError(tr('Copy is unavailable. Use the buyer link shown below.', 'تعذر النسخ. استخدم رابط العميل الظاهر أدناه.')); }
+  };
   const shareDesign = async (e: FormEvent) => {
     e.preventDefault(); if (!designFile) return;
     setFormError('');
@@ -352,15 +374,15 @@ function OrderDetailContent({ order }: { order: Order }) {
       const uploaded = await upload.mutateAsync({ data: { fileName: designFile.name, dataUrl: await fileToDataUrl(designFile) } });
       await submitDesign.mutateAsync({ id: order.id, data: { imageUrl: uploaded.url, note: designNote } });
       await invalidateOrder(); setDesignFile(null); setDesignNote('');
-    } catch { setFormError(t('Design could not be shared.', 'تعذرت مشاركة التصميم.')); }
+    } catch { setFormError(tr('Design could not be shared. Use a JPEG, PNG, WebP, or GIF under 8 MB.', 'تعذرت مشاركة التصميم. استخدم صورة JPEG أو PNG أو WebP أو GIF أقل من ٨ ميجابايت.')); }
   };
   const submitQuote = async (e: FormEvent) => {
     e.preventDefault(); setFormError('');
-    const expiresAt = quote.expires ? new Date(quote.expires).toISOString() : new Date(Date.now() + 7 * 86400000).toISOString();
     try {
+      const expiresAt = quote.expires ? new Date(`${quote.expires}T23:59:59`).toISOString() : new Date(Date.now() + 7 * 86400000).toISOString();
       await saveQuote.mutateAsync({ id: order.id, data: { materialsCostEgp: Number(quote.materials), laborCostEgp: Number(quote.labor), marginPercent: Number(quote.margin), displayCurrency: quote.currency, fxRateToEgp: Number(quote.fx), expiresAt } });
       await invalidateOrder(); setQuoteOpen(false);
-    } catch { setFormError(t('Quote could not be saved. Check the amounts and exchange rate.', 'تعذر حفظ السعر. تحقق من المبالغ وسعر الصرف.')); }
+    } catch { setFormError(tr('Quote could not be saved. Check the amounts, exchange rate, and future expiry.', 'تعذر حفظ السعر. تحقق من المبالغ وسعر الصرف وتاريخ انتهاء مستقبلي.')); }
   };
   const submitProgress = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault(); setFormError('');
@@ -370,27 +392,24 @@ function OrderDetailContent({ order }: { order: Order }) {
       let photoUrl: string | null = null;
       if (photo instanceof File && photo.size) photoUrl = (await upload.mutateAsync({ data: { fileName: photo.name, dataUrl: await fileToDataUrl(photo) } })).url;
       await postProgress.mutateAsync({ id: order.id, data: { stage: progress.stage, note: progress.note, photoUrl } });
-      await invalidateOrder(); setProgressOpen(false); setProgress({ stage: '', note: '' });
-    } catch { setFormError(t('Progress update could not be posted.', 'تعذر نشر تحديث التقدم.')); }
+      await invalidateOrder(); setProgressOpen(false); setProgress({ stage: 'cutting', note: '' });
+    } catch { setFormError(tr('Progress update could not be posted. Photos must be JPEG, PNG, WebP, or GIF under 8 MB.', 'تعذر نشر التحديث. استخدم صورة JPEG أو PNG أو WebP أو GIF أقل من ٨ ميجابايت.')); }
   };
-  const baseCost = Number(quote.materials || 0) + Number(quote.labor || 0);
-  const totalEgp = Math.round(baseCost * (1 + Number(quote.margin || 0) / 100) * 100) / 100;
-  const totalDisplay = Math.round((totalEgp / Math.max(0.01, Number(quote.fx || 1))) * 100) / 100;
-  const depositPercent = totalEgp > 0 ? Math.round((Number(quote.materials || 0) / totalEgp) * 10000) / 100 : 0;
-  const depositAmountDisplay = Math.round((totalDisplay * depositPercent / 100) * 100) / 100;
+  const { totalEgp, totalDisplay, depositPercent, depositDisplay: depositAmountDisplay } = quotePreview(Number(quote.materials || 0), Number(quote.labor || 0), Number(quote.margin || 0), Number(quote.fx || 0));
   return <AppFrame><Header showNotifications /><div className="page-enter page-pad mx-auto max-w-6xl px-5 py-7 md:px-10 md:py-10">
     <Link href="/" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground no-underline"><ArrowRight size={16} className="rtl:rotate-180" />{t('All orders', 'كل الطلبات')}</Link>
     <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
       <div><div className="mb-2 flex flex-wrap items-center gap-2"><span className={`status-pill ${statusTone(order.status)}`}>{statusNames[order.status]?.[lang === 'ar' ? 1 : 0]}</span><span className="text-xs text-muted-foreground">#{order.id.slice(0, 8)}</span></div><h1 className="font-display text-3xl font-extrabold tracking-tight md:text-4xl">{order.title}</h1><p className="mt-2 text-sm text-muted-foreground">{order.buyerName} · {order.buyerCountry} · {t('Created', 'تاريخ الإنشاء')} {dateShort(order.createdAt)}</p></div>
       <div className="flex flex-wrap gap-2">
         <Button className="btn-outline" onClick={copyLink} data-testid="button-copy-buyer-link">{shareCopied ? <Check size={17} /> : <Copy size={17} />}{shareCopied ? t('Link copied', 'تم نسخ الرابط') : t('Copy buyer link', 'نسخ رابط العميل')}</Button>
-        <a className="btn btn-soft" target="_blank" rel="noreferrer" href={whatsappHref(order.buyerPhone, `${t('Follow your order here:', 'تابع طلبك من هنا:')} ${tokenUrl}`)} data-testid="link-whatsapp"><MessageCircle size={17} />{t('WhatsApp', 'واتساب')}</a>
+        <a className="btn btn-soft" target="_blank" rel="noreferrer" href={whatsappHref(order.buyerPhone, whatsappOrderMessage(order.buyerName, order.title, order.status, tokenUrl), order.buyerCountry)} data-testid="link-whatsapp"><MessageCircle size={17} />{t('WhatsApp', 'واتساب')}</a>
       </div>
     </div>
     <div className="mt-7 grid gap-5 lg:grid-cols-[1.3fr_.7fr]">
       <div className="space-y-5">
         <section className="surface p-5 md:p-6"><div className="flex items-center justify-between"><div><h2 className="font-display text-lg font-bold">{t('Order details', 'تفاصيل الطلب')}</h2><p className="mt-1 text-xs text-muted-foreground">{t('What the buyer asked for', 'تفاصيل طلب العميل')}</p></div><Hammer size={20} className="text-accent" /></div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2"><Detail label={t('Buyer', 'العميل')} value={order.buyerName} /><Detail label={t('WhatsApp', 'واتساب')} value={order.buyerPhone} /><Detail label={t('Dimensions', 'الأبعاد')} value={order.dimensions || '—'} /><Detail label={t('Description', 'الوصف')} value={order.description || '—'} /></div>
+          <OrderSpecification order={order} lang={lang} />
           {order.images?.length > 0 && <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{order.images.map(image => <a key={image.id} href={image.url} target="_blank" rel="noreferrer" className="group relative block aspect-[4/3] overflow-hidden rounded-xl bg-secondary" data-testid={`image-order-${image.id}`}><img src={image.url} alt={image.kind === 'design' ? t('Shared design', 'التصميم المشارك') : t('Reference', 'صورة مرجعية')} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /><span className="absolute bottom-2 start-2 rounded-full bg-card/90 px-2 py-1 text-[10px] font-bold">{image.kind === 'design' ? t('Design', 'تصميم') : t('Reference', 'مرجع')}</span></a>)}</div>}
         </section>
           {!['closed', 'cancelled', 'expired'].includes(order.status) && <>
@@ -409,7 +428,10 @@ function OrderDetailContent({ order }: { order: Order }) {
       </div>
       <aside className="space-y-5">
         <section className="surface p-5 md:p-6"><h2 className="font-display text-lg font-bold">{t('Order path', 'مسار الطلب')}</h2><OrderSteps order={order} />
-          {order.status === 'in_production' && <Button className="btn-primary mt-5 w-full" disabled={markReady.isPending} onClick={() => markReady.mutate({ id: order.id }, { onSuccess: () => invalidateOrder() })} data-testid="button-mark-delivered">{markReady.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <PackageCheck size={17} />}{t('Mark ready for delivery', 'تأكيد الجاهزية للتسليم')}</Button>}
+          {order.status === 'in_production' && <Button className="btn-primary mt-5 w-full" disabled={markReady.isPending} onClick={() => {
+            setFormError('');
+            markReady.mutate({ id: order.id }, { onSuccess: () => invalidateOrder(), onError: () => setFormError(tr('Could not mark this order ready. Please try again.', 'تعذر تأكيد الجاهزية. حاول مرة أخرى.')) });
+          }} data-testid="button-mark-delivered">{markReady.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <PackageCheck size={17} />}{t('Mark ready for delivery', 'تأكيد الجاهزية للتسليم')}</Button>}
           <div className="mt-5 rounded-xl bg-secondary/70 p-4"><p className="text-xs font-bold text-primary">{t('Private buyer page', 'صفحة العميل الخاصة')}</p><p className="mt-1 break-all text-xs leading-5 text-muted-foreground">{tokenUrl}</p><a href={tokenUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary no-underline">{t('Open buyer page', 'فتح صفحة العميل')}<ExternalLink size={13} /></a></div>
         </section>
         <section className="surface p-5 md:p-6"><h2 className="font-display text-lg font-bold">{t('Payments received', 'الدفعات المستلمة')}</h2>
@@ -418,12 +440,47 @@ function OrderDetailContent({ order }: { order: Order }) {
       </aside>
     </div>
     {formError && <div role="alert" className="fixed bottom-5 start-5 z-40 rounded-xl bg-destructive px-4 py-3 text-sm text-white shadow-lg">{formError}<button onClick={() => setFormError('')} className="ms-3" aria-label={t('Dismiss', 'إغلاق')}><X size={14} /></button></div>}
-    {quoteOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setQuoteOpen(false); }}><div role="dialog" aria-modal="true" className="modal"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-accent">{t('A fair agreement', 'اتفاق عادل')}</p><h2 className="font-display mt-1 text-2xl font-extrabold">{t('Prepare a quote', 'إعداد السعر')}</h2></div><button data-testid="button-close-quote" className="grid h-9 w-9 place-items-center rounded-full bg-secondary" onClick={() => setQuoteOpen(false)}><X size={18} /></button></div>
-      <form onSubmit={submitQuote} className="mt-6 space-y-4"><div className="grid grid-cols-2 gap-3"><Field label={t('Materials · EGP', 'الخامات · جنيه')}><input data-testid="input-materials-cost" className="input" type="number" min="0" step="1" required value={quote.materials} onChange={e => setQuote(p => ({ ...p, materials: e.target.value }))} /></Field><Field label={t('Labor · EGP', 'المصنعية · جنيه')}><input data-testid="input-labor-cost" className="input" type="number" min="0" step="1" required value={quote.labor} onChange={e => setQuote(p => ({ ...p, labor: e.target.value }))} /></Field></div><div className="grid grid-cols-2 gap-3"><Field label={t('Margin · %', 'هامش الربح · ٪')}><input data-testid="input-margin-percent" className="input" type="number" min="0" step="1" required value={quote.margin} onChange={e => setQuote(p => ({ ...p, margin: e.target.value }))} /></Field><Field label={t('Buyer currency', 'عملة العميل')}><select data-testid="select-quote-currency" className="input" value={quote.currency} onChange={e => { const currency = e.target.value as Currency; setQuote(p => ({ ...p, currency, fx: String(demoFxRates[currency]) })); }}><option value="USD">USD</option><option value="SAR">SAR</option><option value="AED">AED</option><option value="EGP">EGP</option></select></Field></div><Field label={t('Exchange rate · EGP for 1 currency unit', 'سعر الصرف · جنيه لكل وحدة')} hint={t('Demo rate, editable and locked when you send the quote.', 'سعر تجريبي قابل للتعديل وسيُثبّت عند إرسال السعر.')}><input data-testid="input-exchange-rate" className="input" type="number" min="0.01" step="0.01" required value={quote.fx} onChange={e => setQuote(p => ({ ...p, fx: e.target.value }))} /></Field><Field label={t('Quote expiry', 'تاريخ انتهاء السعر')}><input data-testid="input-quote-expiry" className="input" type="date" value={quote.expires} onChange={e => setQuote(p => ({ ...p, expires: e.target.value }))} /></Field>
-        <div className="rounded-xl bg-secondary/70 p-4"><div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('Quoted total', 'السعر الإجمالي')}</span><strong>{money(totalDisplay, quote.currency)}</strong></div><p className="mt-1 text-xs text-muted-foreground">{money(totalEgp)} {t('before conversion', 'قبل التحويل')}</p><div className="mt-3 flex justify-between border-t border-border pt-3 text-xs text-muted-foreground"><span>{t('Deposit · materials share', 'العربون · حصة الخامات')}</span><strong>{money(depositAmountDisplay, quote.currency)} · {depositPercent}%</strong></div></div><Button className="btn-primary w-full" type="submit" disabled={saveQuote.isPending} data-testid="button-save-quote">{saveQuote.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <Check size={17} />}{t('Share quote with buyer', 'إرسال السعر للعميل')}</Button>
-      </form></div></div>}
-    {progressOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setProgressOpen(false); }}><div role="dialog" aria-modal="true" className="modal"><div className="flex items-start justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-accent">{t('A small update goes a long way', 'تحديث صغير يفرق')}</p><h2 className="font-display mt-1 text-2xl font-extrabold">{t('Post progress', 'إضافة تحديث')}</h2></div><button className="grid h-9 w-9 place-items-center rounded-full bg-secondary" onClick={() => setProgressOpen(false)}><X size={18} /></button></div>
-      <form onSubmit={submitProgress} className="mt-6 space-y-4"><Field label={t('Stage', 'المرحلة')}><input data-testid="input-progress-stage" className="input" required value={progress.stage} onChange={e => setProgress(p => ({ ...p, stage: e.target.value }))} placeholder={t('Wood cut and prepared', 'تم تقطيع الخشب وتجهيزه')} /></Field><Field label={t('Note for buyer', 'ملاحظة للعميل')}><textarea data-testid="input-progress-note" className="input" value={progress.note} onChange={e => setProgress(p => ({ ...p, note: e.target.value }))} placeholder={t('A brief note about what is happening…', 'ملاحظة قصيرة عن المرحلة الحالية...')} /></Field><Field label={t('Photo (optional)', 'صورة (اختياري)')}><input data-testid="input-progress-photo" className="input" type="file" name="photo" accept="image/*" /></Field><Button type="submit" className="btn-primary w-full" disabled={postProgress.isPending || upload.isPending} data-testid="button-submit-progress">{postProgress.isPending || upload.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <ArrowUpRight size={17} />}{t('Post update', 'نشر التحديث')}</Button></form></div></div>}
+    {quoteOpen && <OwnerDialog title={t('Prepare a quote', 'إعداد السعر')} lang={lang} onClose={() => setQuoteOpen(false)}>
+      <div className="flex items-start justify-between">
+        <div><p className="text-xs font-bold uppercase tracking-wider text-accent">{t('A fair agreement', 'اتفاق عادل')}</p><h2 className="font-display mt-1 text-2xl font-extrabold">{t('Prepare a quote', 'إعداد السعر')}</h2></div>
+        <button type="button" aria-label={t('Close quote', 'إغلاق السعر')} data-testid="button-close-quote" className="grid h-11 w-11 place-items-center rounded-full bg-secondary" onClick={() => setQuoteOpen(false)}><X size={18} /></button>
+      </div>
+      <form onSubmit={submitQuote} className="mt-6 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('Materials · EGP', 'الخامات · جنيه')}><input data-testid="input-materials-cost" className="input" type="number" min="0" step="0.01" required value={quote.materials} onChange={e => setQuote(p => ({ ...p, materials: e.target.value }))} /></Field>
+          <Field label={t('Labor · EGP', 'المصنعية · جنيه')}><input data-testid="input-labor-cost" className="input" type="number" min="0" step="0.01" required value={quote.labor} onChange={e => setQuote(p => ({ ...p, labor: e.target.value }))} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('Cost markup · %', 'الربح على التكلفة · ٪')}><input data-testid="input-margin-percent" className="input" type="number" min="0" step="0.1" required value={quote.margin} onChange={e => setQuote(p => ({ ...p, margin: e.target.value }))} /></Field>
+          <Field label={t('Buyer currency', 'عملة العميل')}><select data-testid="select-quote-currency" className="input" value={quote.currency} onChange={e => { const currency = e.target.value as Currency; setQuote(p => ({ ...p, currency, fx: String(demoFxRates[currency]) })); }}><option value="USD">USD</option><option value="SAR">SAR</option><option value="AED">AED</option><option value="EGP">EGP</option></select></Field>
+        </div>
+        <Field label={t('Exchange rate · EGP for 1 currency unit', 'سعر الصرف · جنيه لكل وحدة')} hint={t('Demo rate, locked when sent. Actual charges and the ledger are in EGP.', 'سعر تجريبي يُثبّت عند الإرسال. التحصيل والسجل بالجنيه المصري.')}><input data-testid="input-exchange-rate" className="input" type="number" min="0.01" step="0.01" required disabled={quote.currency === 'EGP'} value={quote.fx} onChange={e => setQuote(p => ({ ...p, fx: e.target.value }))} /></Field>
+        <Field label={t('Quote expiry', 'تاريخ انتهاء السعر')}><input data-testid="input-quote-expiry" className="input" type="date" required min={new Date().toISOString().slice(0, 10)} value={quote.expires} onChange={e => setQuote(p => ({ ...p, expires: e.target.value }))} /></Field>
+        <div className="rounded-xl bg-secondary/70 p-4">
+          <div className="flex justify-between gap-2 text-sm"><span className="text-muted-foreground">{t('Quoted total', 'السعر الإجمالي')}</span><strong data-testid="text-quote-total">{money(totalDisplay, quote.currency)}</strong></div>
+          <p className="mt-1 text-xs text-muted-foreground">{money(totalEgp)} {t('before conversion', 'قبل التحويل')}</p>
+          <div className="mt-3 flex flex-wrap justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground"><span>{t('Deposit · materials share', 'العربون · حصة الخامات')}</span><strong data-testid="text-quote-deposit">{money(depositAmountDisplay, quote.currency)} · {depositPercent}%</strong></div>
+        </div>
+        <RateWhatIf lang={lang} materials={Number(quote.materials || 0)} labor={Number(quote.labor || 0)} total={totalEgp} />
+        {formError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{formError}</p>}
+        <Button className="btn-primary w-full" type="submit" disabled={saveQuote.isPending || totalEgp <= 0} data-testid="button-save-quote">{saveQuote.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <Check size={17} />}{t('Share quote with buyer', 'إرسال السعر للعميل')}</Button>
+      </form>
+    </OwnerDialog>}
+    {progressOpen && <OwnerDialog title={t('Post progress', 'إضافة تحديث')} lang={lang} onClose={() => setProgressOpen(false)}>
+      <div className="flex items-start justify-between">
+        <div><p className="text-xs font-bold uppercase tracking-wider text-accent">{t('A small update goes a long way', 'تحديث صغير يفرق')}</p><h2 className="font-display mt-1 text-2xl font-extrabold">{t('Post progress', 'إضافة تحديث')}</h2></div>
+        <button type="button" aria-label={t('Close progress', 'إغلاق التحديث')} className="grid h-11 w-11 place-items-center rounded-full bg-secondary" onClick={() => setProgressOpen(false)}><X size={18} /></button>
+      </div>
+      <form onSubmit={submitProgress} className="mt-6 space-y-4">
+        <Field label={t('Stage', 'المرحلة')}><select data-testid="input-progress-stage" className="input" required value={progress.stage} onChange={e => setProgress(p => ({ ...p, stage: e.target.value }))}>
+          <option value="cutting">{t('Cutting', 'تقطيع الخشب')}</option><option value="assembly">{t('Assembly', 'التجميع')}</option><option value="finishing">{t('Finishing', 'التشطيب')}</option><option value="ready">{t('Ready', 'جاهز')}</option>
+        </select></Field>
+        <Field label={t('Note for buyer', 'ملاحظة للعميل')}><textarea data-testid="input-progress-note" className="input" value={progress.note} onChange={e => setProgress(p => ({ ...p, note: e.target.value }))} placeholder={t('A brief note about what is happening…', 'ملاحظة قصيرة عن المرحلة الحالية...')} /></Field>
+        <Field label={t('Take or upload a photo (optional)', 'التقاط أو رفع صورة (اختياري)')} hint={t('JPEG, PNG, WebP, or GIF · under 8 MB. A “ready” update does not mark the order ready; use the separate button.', 'JPEG أو PNG أو WebP أو GIF · أقل من ٨ ميجابايت. تحديث «جاهز» لا يغيّر حالة الطلب؛ استخدم زر تأكيد الجاهزية.')}><input data-testid="input-progress-photo" className="input" type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif" /></Field>
+        {formError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{formError}</p>}
+        <Button type="submit" className="btn-primary w-full" disabled={postProgress.isPending || upload.isPending} data-testid="button-submit-progress">{postProgress.isPending || upload.isPending ? <LoaderCircle className="animate-spin" size={17} /> : <ArrowUpRight size={17} />}{t('Post update', 'نشر التحديث')}</Button>
+      </form>
+    </OwnerDialog>}
   </div></AppFrame>;
 }
 function Detail({ label, value }: { label: string; value: string }) {
@@ -532,6 +589,9 @@ function Router() {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}><Switch>
     <Route path="/" component={OwnerHome} />
+    <Route path="/owner" component={OwnerHome} />
+    <Route path="/owner/orders/new" component={NewOrderPage} />
+    <Route path="/owner/orders/:id" component={OrderDetailPage} />
     <Route path="/orders/new" component={NewOrderPage} />
     <Route path="/orders/:id" component={OrderDetailPage} />
     <Route path="/b/:token" component={BuyerPage} />
