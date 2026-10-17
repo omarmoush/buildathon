@@ -13,8 +13,8 @@ const schema = z.object({
   expiresAt: z.string().refine(value => Number.isFinite(Date.parse(value)) && Date.parse(value) > Date.now(), "Expiry must be in the future."),
   depositPercent: z.number().finite().positive().max(1).optional(),
 });
-quotesRouter.post("/orders/:id/quote", requireOwner, (req, res) => {
-  const order = ownedOrder(String(req.params.id), res.locals.ownerId);
+quotesRouter.post("/orders/:id/quote", requireOwner, async (req, res) => {
+  const order = await ownedOrder(String(req.params.id), res.locals.ownerId);
   const body = req.body ?? {};
   const data = schema.parse({ ...body,
     materialsEgp: body.materialsEgp ?? body.materialsCostEgp,
@@ -30,11 +30,11 @@ quotesRouter.post("/orders/:id/quote", requireOwner, (req, res) => {
   const depositPercent = data.depositPercent ?? data.materialsEgp / totalEgp;
   const depositEgp = money(totalEgp * depositPercent);
   if (depositEgp <= 0 || depositPercent > 1) throw new ApiError(400, "The deposit must be greater than zero and no more than the total.");
-  db.transaction(() => {
-    db.prepare("INSERT INTO quotes VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").run(randomUUID(), order.id,
+  await db.transaction(async () => {
+    await db.prepare("INSERT INTO quotes VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").run(randomUUID(), order.id,
       data.materialsEgp, data.laborEgp, data.marginPercent, totalEgp, data.displayCurrency, data.fxRate,
       money(totalEgp / data.fxRate), depositPercent, depositEgp, new Date(data.expiresAt).toISOString());
-    transition(order.id, "quoted", "The locked quote is ready for the buyer.");
-  })();
-  res.json(getOrder(order.id));
+    await transition(order.id, "quoted", "The locked quote is ready for the buyer.");
+  });
+  res.json(await getOrder(order.id));
 });

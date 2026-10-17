@@ -4,13 +4,14 @@ import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import request from "supertest";
-import { app, logger, safeRequestPath } from "../index";
-import { createDatabase, db, getOrder, listOrders, useDatabase, uploadDirectory } from "../db";
+import { app, logger, safeRequestPath, uploadDirectory } from "../index";
+import { db, getOrder, listOrders, useDatabase } from "../db";
+import { createDatabase } from "../sqlite";
 import { seed } from "../seed";
 import { settleVerifiedPayment } from "../routes/payments";
 
 logger.level = "silent";
-beforeEach(() => { useDatabase(createDatabase(":memory:")); seed(); });
+beforeEach(async () => { useDatabase(createDatabase(":memory:")); await seed(); });
 after(() => { db.close(); });
 const spec = {
   productType: "Test chair", style: ["modern"], pieceSource: "customized",
@@ -31,21 +32,21 @@ async function createOrder() {
 }
 const quote = { materialsEgp: 20000, laborEgp: 10000, marginPercent: 20,
   displayCurrency: "SAR", fxRate: 13, expiresAt: new Date(Date.now() + 86400000).toISOString() };
-function pending(orderId: string, type: "deposit" | "balance", amount: number) {
+async function pending(orderId: string, type: "deposit" | "balance", amount: number) {
   const id = randomUUID(); const ref = randomUUID();
-  db.prepare("INSERT INTO payments VALUES (?,?,?,?,?,?,?)").run(id, orderId, type, amount, "pending", ref, new Date().toISOString());
+  await db.prepare("INSERT INTO payments VALUES (?,?,?,?,?,?,?)").run(id, orderId, type, amount, "pending", ref, new Date().toISOString());
   return { id, ref };
 }
-test("seed is idempotent, with exact states, Khaled in Riyadh, and local photo placeholders", () => {
-  seed();
-  const orders = listOrders();
+test("seed is idempotent, with exact states, Khaled in Riyadh, and local photo placeholders", async () => {
+  await seed();
+  const orders = await listOrders();
   assert.equal(orders.length, 3);
-  assert.equal(getOrder("demo-bedroom").buyerName, "Khaled");
-  assert.equal(getOrder("demo-bedroom").updates.length, 3);
-  assert.equal(getOrder("demo-bedroom").status, "in_production");
-  assert.equal(getOrder("demo-bedroom").payments[0]?.state, "held");
-  assert.equal(getOrder("demo-dining").status, "quoted");
-  assert.equal(getOrder("demo-wardrobe").status, "ready");
+  assert.equal((await getOrder("demo-bedroom")).buyerName, "Khaled");
+  assert.equal((await getOrder("demo-bedroom")).updates.length, 3);
+  assert.equal((await getOrder("demo-bedroom")).status, "in_production");
+  assert.equal((await getOrder("demo-bedroom")).payments[0]?.state, "held");
+  assert.equal((await getOrder("demo-dining")).status, "quoted");
+  assert.equal((await getOrder("demo-wardrobe")).status, "ready");
 });
 test("public quiz order preserves spec and random token; owner listing is protected", async () => {
   await request(app).get("/api/orders").expect(401);
@@ -63,7 +64,7 @@ test("design approval gates quotes; FX, margin, deposit and quote locking are co
   await agent.post(`/api/orders/${order.orderId}/start-design`).send({}).expect(200);
   await request(app).post(`/api/b/${order.token}/request-changes`).send({ comment: "" }).expect(400);
   await request(app).post(`/api/b/${order.token}/request-changes`).send({ comment: "Wider seat" }).expect(200);
-  assert.equal(getOrder(order.orderId).designChangeNote, "Wider seat");
+  assert.equal((await getOrder(order.orderId)).designChangeNote, "Wider seat");
   await agent.post(`/api/orders/${order.orderId}/quote`).send(quote).expect(409);
   await request(app).post(`/api/b/${order.token}/approve-design`).send({}).expect(200);
   const response = await agent.post(`/api/orders/${order.orderId}/quote`).send(quote).expect(200);
@@ -82,25 +83,25 @@ test("verified settlement is idempotent; two progress photos, delivery and balan
   await agent.post(`/api/orders/${created.orderId}/start-design`).send({}).expect(200);
   await request(app).post(`/api/b/${created.token}/approve-design`).send({}).expect(200);
   await agent.post(`/api/orders/${created.orderId}/quote`).send(quote).expect(200);
-  const deposit = pending(created.orderId, "deposit", 20000);
-  assert.throws(() => settleVerifiedPayment(deposit.id, deposit.ref, 1));
-  assert.equal(getOrder(created.orderId).status, "quoted");
-  settleVerifiedPayment(deposit.id, deposit.ref, 20000);
-  const notificationsBefore = db.prepare("SELECT COUNT(*) count FROM notifications").get() as { count: number };
-  settleVerifiedPayment(deposit.id, deposit.ref, 20000);
-  assert.deepEqual(db.prepare("SELECT COUNT(*) count FROM notifications").get(), notificationsBefore);
-  assert.equal(getOrder(created.orderId).status, "deposit_paid");
+  const deposit = await pending(created.orderId, "deposit", 20000);
+  await assert.rejects(settleVerifiedPayment(deposit.id, deposit.ref, 1));
+  assert.equal((await getOrder(created.orderId)).status, "quoted");
+  await settleVerifiedPayment(deposit.id, deposit.ref, 20000);
+  const notificationsBefore = await db.prepare("SELECT COUNT(*) count FROM notifications").get<{ count: number }>();
+  await settleVerifiedPayment(deposit.id, deposit.ref, 20000);
+  assert.deepEqual(await db.prepare("SELECT COUNT(*) count FROM notifications").get(), notificationsBefore);
+  assert.equal((await getOrder(created.orderId)).status, "deposit_paid");
   for (const stage of ["Assembly", "Finishing"]) {
     await agent.post(`/api/orders/${created.orderId}/progress`).send({
       stage, note: "Finished this step", photoUrl: "/uploads/demo-progress-1.svg",
     }).expect(200);
   }
-  assert.equal(getOrder(created.orderId).updates.length, 2);
-  assert.equal(getOrder(created.orderId).status, "in_production");
+  assert.equal((await getOrder(created.orderId)).updates.length, 2);
+  assert.equal((await getOrder(created.orderId)).status, "in_production");
   await agent.post(`/api/orders/${created.orderId}/ready`).send({}).expect(200);
-  const balance = pending(created.orderId, "balance", 16000);
-  settleVerifiedPayment(balance.id, balance.ref, 16000);
-  const closed = getOrder(created.orderId);
+  const balance = await pending(created.orderId, "balance", 16000);
+  await settleVerifiedPayment(balance.id, balance.ref, 16000);
+  const closed = (await getOrder(created.orderId));
   assert.equal(closed.status, "closed");
   assert.deepEqual(closed.payments.map(payment => payment.state), ["released", "released"]);
   const dashboard = (await agent.get("/api/dashboard").expect(200)).body;
@@ -108,19 +109,19 @@ test("verified settlement is idempotent; two progress photos, delivery and balan
   assert.equal(dashboard.balancesDueEgp, baseline.balancesDueEgp);
 });
 test("unconfigured checkout fails explicitly; return URLs and webhooks cannot fake payment", async () => {
-  const order = getOrder("demo-dining");
+  const order = (await getOrder("demo-dining"));
   const checkout = await request(app).post(`/api/b/${order.token}/pay`).send({ type: "deposit" }).expect(503);
   assert.equal(checkout.body.code, "PAYMENTS_UNAVAILABLE");
-  assert.equal(getOrder(order.id).payments.length, 0);
-  const charge = pending(order.id, "deposit", order.quote!.depositEgp);
+  assert.equal((await getOrder(order.id)).payments.length, 0);
+  const charge = await pending(order.id, "deposit", order.quote!.depositEgp);
   await request(app).get(`/api/b/${order.token}/payment-return?success=true`).expect(303);
   await request(app).post("/api/paymob/webhook").send({ success: true }).expect(503);
-  assert.equal(getOrder(order.id).payments.find(payment => payment.id === charge.id)?.state, "pending");
-  assert.equal(getOrder(order.id).status, "quoted");
+  assert.equal((await getOrder(order.id)).payments.find(payment => payment.id === charge.id)?.state, "pending");
+  assert.equal((await getOrder(order.id)).status, "quoted");
 });
 test("unpaid quotes expire and demo FX endpoint returns exact contract rates", async () => {
-  const order = getOrder("demo-dining");
-  db.prepare("UPDATE quotes SET expires_at=? WHERE order_id=?").run(new Date(0).toISOString(), order.id);
+  const order = (await getOrder("demo-dining"));
+  await db.prepare("UPDATE quotes SET expires_at=? WHERE order_id=?").run(new Date(0).toISOString(), order.id);
   const response = await request(app).get(`/api/b/${order.token}`).expect(200);
   assert.equal(response.body.status, "expired");
   await request(app).post(`/api/b/${order.token}/pay`).send({ type: "deposit" }).expect(409);

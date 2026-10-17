@@ -12,6 +12,7 @@ Wasta helps Egyptian workshops manage custom furniture orders and share progress
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - The legacy PostgreSQL schema and database are retained, but the active server does not use them. Existing PostgreSQL orders were not migrated.
 - Required env: `SESSION_SECRET` — signs owner session cookies
+- Cloudflare: `npx wrangler@4 deploy` (wrangler.jsonc) builds the web app and deploys the Worker `buildathon` — API on D1 (`buildathon-db`), uploads on R2 (`buildathon-uploads`), secrets set with `wrangler secret put`. Local Worker: `npx wrangler@4 dev` (put `SESSION_SECRET` in `.dev.vars`).
 
 ## Stack
 

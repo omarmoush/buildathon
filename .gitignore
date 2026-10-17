@@ -53,3 +53,7 @@ Thumbs.db
 # Local secrets
 .env
 .env.local
+
+# Cloudflare
+.wrangler/
+.dev.vars

@@ -1,86 +1,19 @@
-import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { paymentsEnabled } from "./lib/paymob-config";
+import type { Database } from "./sql";
 import type { Order, OrderStatus, OrderSpec, Quote, Payment, ProgressUpdate, OrderImage, Notification, FurnitureEstimate, OrderReview } from "../shared/contract";
 
-// Both index.ts and bundled dist/index.js resolve to the same server directory.
-const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
-export const serverDirectory = path.basename(moduleDirectory) === "dist" ? path.dirname(moduleDirectory) : moduleDirectory;
-export const projectDirectory = path.dirname(serverDirectory);
-export const uploadDirectory = path.join(projectDirectory, "uploads");
-export const sqlitePath = path.join(serverDirectory, "data", "wasta.sqlite");
-mkdirSync(path.dirname(sqlitePath), { recursive: true });
-mkdirSync(uploadDirectory, { recursive: true });
-
-export function createDatabase(filename: string): Database.Database {
-  const connection = new Database(filename);
-  connection.pragma("foreign_keys = ON");
-  connection.pragma("journal_mode = WAL");
-  connection.pragma("busy_timeout = 5000");
-  connection.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT UNIQUE NOT NULL,
-      role TEXT NOT NULL DEFAULT 'owner', pin_hash TEXT NOT NULL,
-      language TEXT NOT NULL DEFAULT 'ar', workshop_name TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS orders (
-      id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id),
-      buyer_name TEXT NOT NULL, buyer_phone TEXT NOT NULL, buyer_country TEXT NOT NULL,
-      title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', dimensions TEXT NOT NULL DEFAULT '',
-      spec_json TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN
-        ('requested','design_review','quoted','deposit_paid','in_production','ready','delivered','closed','cancelled','expired')),
-      design_approved INTEGER NOT NULL DEFAULT 0 CHECK(design_approved IN (0,1)),
-      design_approved_at TEXT, design_change_note TEXT, token TEXT UNIQUE NOT NULL, created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS quotes (
-      id TEXT PRIMARY KEY, order_id TEXT UNIQUE NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      materials_egp REAL NOT NULL CHECK(materials_egp >= 0), labor_egp REAL NOT NULL CHECK(labor_egp >= 0),
-      margin_percent REAL NOT NULL CHECK(margin_percent >= 0), total_egp REAL NOT NULL CHECK(total_egp > 0),
-      display_currency TEXT NOT NULL, fx_rate REAL NOT NULL CHECK(fx_rate > 0), total_display REAL NOT NULL,
-      deposit_percent REAL NOT NULL CHECK(deposit_percent > 0 AND deposit_percent <= 1),
-      deposit_egp REAL NOT NULL, expires_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS payments (
-      id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      type TEXT NOT NULL CHECK(type IN ('deposit','balance')), amount_egp REAL NOT NULL CHECK(amount_egp >= 0),
-      state TEXT NOT NULL CHECK(state IN ('pending','held','released')),
-      paymob_ref TEXT UNIQUE, created_at TEXT NOT NULL, UNIQUE(order_id,type)
-    );
-    CREATE TABLE IF NOT EXISTS progress_updates (
-      id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      stage TEXT NOT NULL, note TEXT NOT NULL, photo_url TEXT, created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS order_images (
-      id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      url TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('reference','design')), created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS notifications (
-      id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      audience TEXT NOT NULL CHECK(audience IN ('owner','buyer')), message TEXT NOT NULL, created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS order_estimates (
-      order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
-      estimate_json TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS order_reviews (
-      order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-      phase TEXT NOT NULL CHECK(phase IN ('request','deposit')),
-      decision TEXT NOT NULL CHECK(decision IN ('accepted','changes_requested')),
-      note TEXT NOT NULL DEFAULT '', reviewed_at TEXT NOT NULL,
-      PRIMARY KEY(order_id,phase)
-    );
-    CREATE INDEX IF NOT EXISTS orders_owner_created ON orders(owner_id,created_at);
-    CREATE INDEX IF NOT EXISTS progress_order ON progress_updates(order_id,created_at);
-    CREATE INDEX IF NOT EXISTS notifications_created ON notifications(created_at);
-  `);
-  return connection;
+export type { Database } from "./sql";
+// Set at startup: better-sqlite3 locally (server/index.ts), D1 on Cloudflare (server/worker.ts).
+const uninitialized = new Proxy({} as Database, {
+  get() { throw new Error("Database not initialized: call useDatabase() at startup."); },
+});
+export let db: Database = uninitialized;
+/** Selects the backend at startup; also used for isolated server tests. Never exposed over HTTP. */
+export function useDatabase(connection: Database): void {
+  if (db !== uninitialized) db.close();
+  db = connection;
 }
-export let db = createDatabase(sqlitePath);
-/** Dependency injection for isolated server tests; never exposed over HTTP. */
-export function useDatabase(connection: Database.Database): void { db.close(); db = connection; }
 
 export class ApiError extends Error {
   constructor(public status: number, message: string, public code = "REQUEST_FAILED") { super(message); }
@@ -95,17 +28,17 @@ const nextStatuses: Record<OrderStatus, OrderStatus[]> = {
 export function assertTransition(current: OrderStatus, next: OrderStatus): void {
   if (!nextStatuses[current]?.includes(next)) throw new ApiError(409, `Invalid order transition: ${current} -> ${next}`, "INVALID_TRANSITION");
 }
-export function notify(orderId: string, message: string): void {
+export async function notify(orderId: string, message: string): Promise<void> {
   const statement = db.prepare("INSERT INTO notifications VALUES (?,?,?,?,?)");
   const createdAt = new Date().toISOString();
-  for (const audience of ["owner", "buyer"]) statement.run(randomUUID(), orderId, audience, message, createdAt);
+  for (const audience of ["owner", "buyer"]) await statement.run(randomUUID(), orderId, audience, message, createdAt);
 }
-export function transition(orderId: string, next: OrderStatus, message: string): void {
-  const row = db.prepare("SELECT status FROM orders WHERE id=?").get(orderId) as { status: OrderStatus } | undefined;
+export async function transition(orderId: string, next: OrderStatus, message: string): Promise<void> {
+  const row = await db.prepare("SELECT status FROM orders WHERE id=?").get<{ status: OrderStatus }>(orderId);
   if (!row) throw new ApiError(404, "Order not found.");
   assertTransition(row.status, next);
-  db.prepare("UPDATE orders SET status=? WHERE id=?").run(next, orderId);
-  notify(orderId, message);
+  await db.prepare("UPDATE orders SET status=? WHERE id=?").run(next, orderId);
+  await notify(orderId, message);
 }
 type OrderRow = {
   id: string; owner_id: string; buyer_name: string; buyer_phone: string; buyer_country: string;
@@ -118,13 +51,13 @@ type QuoteRow = {
   display_currency: Quote["displayCurrency"]; fx_rate: number; total_display: number;
   deposit_percent: number; deposit_egp: number; expires_at: string;
 };
-export function getOrder(identifier: string, byToken = false) {
-  const row = db.prepare(`SELECT o.*, u.name owner_name, u.phone owner_phone, u.workshop_name
-    FROM orders o JOIN users u ON u.id=o.owner_id WHERE o.${byToken ? "token" : "id"}=?`).get(identifier) as OrderRow | undefined;
+export async function getOrder(identifier: string, byToken = false) {
+  const row = await db.prepare(`SELECT o.*, u.name owner_name, u.phone owner_phone, u.workshop_name
+    FROM orders o JOIN users u ON u.id=o.owner_id WHERE o.${byToken ? "token" : "id"}=?`).get<OrderRow>(identifier);
   if (!row) throw new ApiError(404, "Order not found.");
-  const qr = db.prepare("SELECT * FROM quotes WHERE order_id=?").get(row.id) as QuoteRow | undefined;
+  const qr = await db.prepare("SELECT * FROM quotes WHERE order_id=?").get<QuoteRow>(row.id);
   if (row.status === "quoted" && qr && Date.parse(qr.expires_at) <= Date.now()) {
-    db.transaction(() => transition(row.id, "expired", "The quote expired before the deposit was paid."))();
+    await db.transaction(() => transition(row.id, "expired", "The quote expired before the deposit was paid."));
     row.status = "expired";
   }
   const quote = qr ? {
@@ -136,18 +69,18 @@ export function getOrder(identifier: string, byToken = false) {
     materialsCostEgp: qr.materials_egp, laborCostEgp: qr.labor_egp, fxRateToEgp: qr.fx_rate,
     depositAmountDisplay: money(qr.deposit_egp / qr.fx_rate), approvedAt: row.design_approved_at,
   } : null;
-  const payments = db.prepare(`SELECT id,order_id orderId,type,amount_egp amountEgp,state,
-    paymob_ref paymobRef,created_at createdAt FROM payments WHERE order_id=? ORDER BY created_at,id`).all(row.id) as Payment[];
-  const updates = db.prepare(`SELECT id,order_id orderId,stage,note,photo_url photoUrl,
-    created_at createdAt FROM progress_updates WHERE order_id=? ORDER BY created_at,id`).all(row.id) as ProgressUpdate[];
-  const images = db.prepare(`SELECT id,order_id orderId,url,kind,created_at createdAt FROM order_images
-    WHERE order_id=? ORDER BY created_at,id`).all(row.id) as OrderImage[];
-  const estimateRow = db.prepare("SELECT estimate_json FROM order_estimates WHERE order_id=?")
-    .get(row.id) as { estimate_json: string } | undefined;
+  const payments = await db.prepare(`SELECT id,order_id orderId,type,amount_egp amountEgp,state,
+    paymob_ref paymobRef,created_at createdAt FROM payments WHERE order_id=? ORDER BY created_at,id`).all<Payment>(row.id);
+  const updates = await db.prepare(`SELECT id,order_id orderId,stage,note,photo_url photoUrl,
+    created_at createdAt FROM progress_updates WHERE order_id=? ORDER BY created_at,id`).all<ProgressUpdate>(row.id);
+  const images = await db.prepare(`SELECT id,order_id orderId,url,kind,created_at createdAt FROM order_images
+    WHERE order_id=? ORDER BY created_at,id`).all<OrderImage>(row.id);
+  const estimateRow = await db.prepare("SELECT estimate_json FROM order_estimates WHERE order_id=?")
+    .get<{ estimate_json: string }>(row.id);
   const estimate = estimateRow ? JSON.parse(estimateRow.estimate_json) as FurnitureEstimate : null;
   const hasDeposit = payments.some(payment => payment.type === "deposit" && payment.state !== "pending");
-  const review = (db.prepare(`SELECT phase,decision,note,reviewed_at reviewedAt FROM order_reviews
-    WHERE order_id=? AND phase=?`).get(row.id, hasDeposit ? "deposit" : "request") as OrderReview | undefined) ?? null;
+  const review = (await db.prepare(`SELECT phase,decision,note,reviewed_at reviewedAt FROM order_reviews
+    WHERE order_id=? AND phase=?`).get<OrderReview>(row.id, hasDeposit ? "deposit" : "request")) ?? null;
   const result: Order = {
     id: row.id, ownerId: row.owner_id, buyerName: row.buyer_name, buyerPhone: row.buyer_phone,
     buyerCountry: row.buyer_country, spec: JSON.parse(row.spec_json) as OrderSpec,
@@ -166,12 +99,12 @@ export function getOrder(identifier: string, byToken = false) {
     depositReviewPending: row.status === "deposit_paid" && hasDeposit && review?.decision !== "accepted",
   };
 }
-export function listOrders(ownerId = "reda") {
-  return (db.prepare("SELECT id FROM orders WHERE owner_id=? ORDER BY created_at DESC,id").all(ownerId) as { id: string }[])
-    .map(row => getOrder(row.id));
+export async function listOrders(ownerId = "reda") {
+  const rows = await db.prepare("SELECT id FROM orders WHERE owner_id=? ORDER BY created_at DESC,id").all<{ id: string }>(ownerId);
+  return Promise.all(rows.map(row => getOrder(row.id)));
 }
-export function notifications(ownerId = "reda"): Notification[] {
+export function notifications(ownerId = "reda"): Promise<Notification[]> {
   return db.prepare(`SELECT n.id,n.order_id orderId,n.audience,n.message,n.created_at createdAt
     FROM notifications n JOIN orders o ON o.id=n.order_id WHERE o.owner_id=? AND n.audience='owner'
-    ORDER BY n.created_at DESC,n.rowid DESC LIMIT 30`).all(ownerId) as Notification[];
+    ORDER BY n.created_at DESC,n.rowid DESC LIMIT 30`).all<Notification>(ownerId);
 }

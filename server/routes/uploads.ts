@@ -1,10 +1,9 @@
 import { Router } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
-import { ApiError, uploadDirectory } from "../db";
+import { ApiError } from "../db";
+import { uploadStore } from "../storage";
 import { rateLimit } from "./orders";
 export const uploadsRouter = Router();
 const maxSize = 8 * 1024 * 1024;
@@ -31,6 +30,6 @@ uploadsRouter.post("/uploads", rateLimit("uploads", 50, 3600000), upload.single(
   const detected = imageType(bytes);
   if (!detected || detected.mime !== mime) throw new ApiError(400, "The file contents do not match an allowed image type.");
   const fileName = `${randomUUID()}.${detected.extension}`;
-  await writeFile(path.join(uploadDirectory, fileName), bytes, { flag: "wx" });
+  await uploadStore().save(fileName, bytes, detected.mime);
   res.status(201).json({ url: `/uploads/${fileName}` });
 });

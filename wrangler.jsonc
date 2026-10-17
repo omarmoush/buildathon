@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.151.1/config-schema.json",
+  "name": "buildathon",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Builds the web app and copies the bundled demo images next to it (served at /uploads/demo-*.svg).
+  "build": {
+    "command": "cd artifacts/wasta && PORT=5173 BASE_PATH=/ NODE_ENV=production node_modules/.bin/vite build --config vite.config.ts && cd ../.. && mkdir -p artifacts/wasta/dist/public/uploads && cp artifacts/api-server/uploads/*.svg artifacts/wasta/dist/public/uploads/"
+  },
+  "assets": {
+    "directory": "./artifacts/wasta/dist/public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/uploads/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "buildathon-db", "database_id": "29ecdcc0-55c5-45b1-9455-1dcff0feffd6" }
+  ],
+  "r2_buckets": [{ "binding": "UPLOADS", "bucket_name": "buildathon-uploads" }],
+  "vars": { "PUBLIC_BASE_URL": "https://buildathon.ahmadfathallah89.workers.dev" },
+  "observability": { "enabled": true }
+  // Secrets (wrangler secret put): SESSION_SECRET, MESHY_API_KEY, PAYMOB_SECRET_KEY, PAYMOB_PUBLIC_KEY,
+  // PAYMOB_INTEGRATION_ID, PAYMOB_HMAC_SECRET, PAYMOB_API_KEY
+}

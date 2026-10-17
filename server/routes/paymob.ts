@@ -82,19 +82,19 @@ export function verifyTransaction(transaction: PaymobTransaction, hmac: string, 
 }
 
 /** Settles a payment from an HMAC-verified transaction. Failed or pending attempts change nothing. */
-export function settleTransaction(transaction: PaymobTransaction, config: PaymobConfig): "paid" | "not_paid" {
+export async function settleTransaction(transaction: PaymobTransaction, config: PaymobConfig): Promise<"paid" | "not_paid"> {
   const failed = (["error_occured", "pending", "is_voided", "is_refunded"] as const).some(field => transaction[field] === "true");
   if (transaction.success !== "true" || failed) return "not_paid";
   if (transaction.currency !== "EGP") throw new ApiError(400, "Unexpected payment currency.");
   if (Number(transaction.integration_id) !== config.integrationId) throw new ApiError(400, "Unexpected payment integration.");
-  const payment = db.prepare("SELECT id FROM payments WHERE paymob_ref=?").get(transaction.order) as { id: string } | undefined;
+  const payment = await db.prepare("SELECT id FROM payments WHERE paymob_ref=?").get(transaction.order) as { id: string } | undefined;
   if (!payment) throw new ApiError(404, "No checkout matches this Paymob order.");
-  settleVerifiedPayment(payment.id, transaction.order, Number(transaction.amount_cents) / 100);
+  await settleVerifiedPayment(payment.id, transaction.order, Number(transaction.amount_cents) / 100);
   return "paid";
 }
 
 export const paymobRouter = Router();
-paymobRouter.post("/paymob/webhook", (req, res) => {
+paymobRouter.post("/paymob/webhook", async (req, res) => {
   const config = paymobConfig();
   if (!config) throw new ApiError(503, "No payment webhook provider is configured. No payment state was changed.", "PAYMENTS_UNAVAILABLE");
   // Paymob also sends TOKEN and other callback types; only transactions move money.
@@ -102,5 +102,5 @@ paymobRouter.post("/paymob/webhook", (req, res) => {
   const transaction = transactionFromCallback(req.body.obj);
   if (!verifyTransaction(transaction, String(req.query.hmac ?? ""), config.hmacSecret))
     throw new ApiError(401, "Invalid Paymob signature. No payment state was changed.", "INVALID_SIGNATURE");
-  res.json({ received: true, result: settleTransaction(transaction, config) });
+  res.json({ received: true, result: await settleTransaction(transaction, config) });
 });
