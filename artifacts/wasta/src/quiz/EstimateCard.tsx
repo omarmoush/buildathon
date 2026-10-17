@@ -1,10 +1,19 @@
 import { useEffect, useState } from "react";
-import { estimateFurniture } from "@workspace/api-client-react";
+import { estimateFurniture, getHealthCheckQueryKey, useHealthCheck } from "@workspace/api-client-react";
 import type { FurnitureEstimate as Estimate } from "@workspace/api-client-react";
 import type { Language, Spec } from "./types";
 
+// Paymob is configured server-side (Worker secrets); /api/healthz reports `paymob-test` / `paymob-live`.
+// Undefined while loading so no notice flashes before the status is known.
+export function usePaymentsConnected(): boolean | undefined {
+  const { data, isError } = useHealthCheck({ query: { queryKey: getHealthCheckQueryKey(), staleTime: 5 * 60_000, retry: 1 } });
+  if (isError) return false;
+  return data ? (data.payments?.startsWith("paymob-") ?? false) : undefined;
+}
+
 export function EstimateCard({ estimate, lang, saved = false }: { estimate: Estimate; lang: Language; saved?: boolean }) {
   const t = (ar: string, en: string) => lang === "ar" ? ar : en;
+  const paymentsConnected = usePaymentsConnected();
   const money = (value: number) => `${new Intl.NumberFormat(lang === "ar" ? "ar-EG" : "en-GB", { maximumFractionDigits: 0 }).format(value)} ${t("ج.م", "EGP")}`;
   return <section className="wb-card" aria-label={t("التكلفة التقديرية", "Indicative estimate")} data-testid="furniture-estimate">
     <span className="wb-badge">{estimate.pricingVersion === "workshop-estimate" ? t("تقدير الورشة", "Workshop estimate") : t("تقدير تخطيطي مبدئي", "Indicative planning estimate")}</span>
@@ -15,7 +24,8 @@ export function EstimateCard({ estimate, lang, saved = false }: { estimate: Esti
     <p className="wb-muted">{saved ? t("هذا التقدير محفوظ مع طلبك.", "This estimate is saved with your order.") : t("يُعاد حساب التقدير على الخادم عند إرسال الطلب.", "The estimate is recalculated on the server when you submit.")} {t("ليس عرض سعر ملزماً. تؤكد الورشة التصميم والسعر النهائي أولاً.", "This is not a binding quote. The workshop confirms the design and final price first.")}</p>
     {estimate.pricingVersion !== "workshop-estimate" && <p className="wb-muted">{t("يعتمد على معدلات تخطيطية استرشادية، وليست أسعاراً معتمدة من الورشة أو الموردين.", "Based on illustrative planning rates, not approved workshop or supplier prices.")}</p>}
     <p className="wb-muted">{t("لا يشمل التوصيل والتركيب والضرائب والمراتب والإكسسوارات. راجع هذه البنود مع الورشة قبل قبول السعر النهائي.", "Excludes delivery, installation, taxes, mattresses and accessories. Confirm these with the workshop before accepting the final quote.")}</p>
-    <p className="wb-notice">{t("لا يوجد دفع الآن. بعد قبول السعر النهائي، يُدفع العربون لحساب ضمان أخشاب ويبقى محفوظاً حتى تؤكد الاستلام (محاكاة).", "Nothing is payable now. After you accept the final quote, the deposit goes to Akshab's escrow and stays there until you confirm delivery (simulated).")}</p>
+    {paymentsConnected === false && <p className="wb-notice">{t("ربط Paymob قيد الانتظار. لن يتم تحصيل عربون أو تأكيد دفع في هذه المرحلة.", "Paymob setup is pending. No deposit will be collected or marked paid at this stage.")}</p>}
+    {paymentsConnected && <p className="wb-notice">{t("بعد أن تؤكد الورشة السعر النهائي، تدفع العربون عبر Paymob لحساب ضمان أخشاب، ويبقى محفوظاً حتى تؤكد الاستلام (ضمان محاكى).", "After the workshop confirms the final quote, you pay the deposit through Paymob into Akshab's escrow, where it stays until you confirm delivery (simulated escrow).")}</p>}
   </section>;
 }
 

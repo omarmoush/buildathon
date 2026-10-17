@@ -531,6 +531,11 @@ components:
       properties:
         status:
           type: string
+        database:
+          type: string
+        payments:
+          type: string
+          description: "`paymob-test` or `paymob-live` when Paymob is configured, otherwise `unavailable`"
       required: [status]
     Error:
       type: object
