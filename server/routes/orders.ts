@@ -1,7 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { randomBytes, randomUUID, createHmac, scryptSync, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { ApiError, db, getOrder, listOrders, money, newOrderCode, normalizeOrderCode, notifications, notify, transition } from "../db";
+import { ApiError, db, getOrder, listOrders, money, newOrderCode, normalizeOrderCode, notifications, notify, payableTotals, transition } from "../db";
 import { findCatalogItem } from "../lib/catalog";
 import { CATEGORIES } from "../../artifacts/api-server/src/lib/furniture-art";
 import type { OrderSpec } from "../../shared/contract";
@@ -216,7 +216,7 @@ ordersRouter.get("/dashboard", requireOwner, async (_req, res) => {
       order.payments.filter(payment => payment.type === "deposit" && payment.state !== "pending")
         .reduce((sum, payment) => sum + payment.amountEgp, 0), 0)),
     balancesDueEgp: money(orders.filter(order => ["deposit_paid", "in_production", "ready", "delivered"].includes(order.status))
-      .reduce((total, order) => total + Math.max(0, (order.quote?.totalEgp ?? 0) -
+      .reduce((total, order) => total + Math.max(0, (payableTotals(order)?.totalEgp ?? 0) -
         order.payments.filter(payment => payment.state !== "pending").reduce((sum, payment) => sum + payment.amountEgp, 0)), 0)),
     orders, notifications: await notifications(res.locals.ownerId),
   });

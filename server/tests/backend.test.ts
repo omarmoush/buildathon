@@ -5,7 +5,7 @@ import { unlink } from "node:fs/promises";
 import path from "node:path";
 import request from "supertest";
 import { app, logger, safeRequestPath, uploadDirectory } from "../index";
-import { db, getOrder, listOrders, useDatabase } from "../db";
+import { db, getOrder, listOrders, money, useDatabase } from "../db";
 import { createDatabase } from "../sqlite";
 import { seed } from "../seed";
 import { settleVerifiedPayment } from "../routes/payments";
@@ -118,6 +118,30 @@ test("unconfigured checkout fails explicitly; return URLs and webhooks cannot fa
   await request(app).post("/api/paymob/webhook").send({ success: true }).expect(503);
   assert.equal((await getOrder(order.id)).payments.find(payment => payment.id === charge.id)?.state, "pending");
   assert.equal((await getOrder(order.id)).status, "quoted");
+});
+test("a quiz order can pay its estimate deposit upfront, then goes through deposit review", async () => {
+  const created = await createOrder();
+  const { estimate } = await getOrder(created.orderId);
+  assert.ok(estimate && estimate.depositEgp > 0);
+  // Upfront checkout passes the status checks and only fails because Paymob is not configured in tests.
+  await request(app).post(`/api/b/${created.token}/pay`).send({ type: "deposit" }).expect(503);
+  const deposit = await pending(created.orderId, "deposit", estimate.depositEgp);
+  const agent = await owner();
+  await agent.post(`/api/orders/${created.orderId}/estimate`).send({ materialsEgp: 1, laborEgp: 1, marginPercent: 0 }).expect(409);
+  await assert.rejects(settleVerifiedPayment(deposit.id, deposit.ref, 1));
+  await settleVerifiedPayment(deposit.id, deposit.ref, estimate.depositEgp);
+  const paid = await getOrder(created.orderId);
+  assert.equal(paid.status, "deposit_paid");
+  assert.equal(paid.depositReviewPending, true);
+  assert.equal(paid.payments[0]?.state, "held");
+  await agent.post(`/api/orders/${created.orderId}/progress`).send({ stage: "cutting" }).expect(409);
+  await agent.post(`/api/orders/${created.orderId}/review`).send({ decision: "accepted" }).expect(200);
+  await agent.post(`/api/orders/${created.orderId}/progress`).send({ stage: "cutting" }).expect(200);
+  await agent.post(`/api/orders/${created.orderId}/ready`).expect(200);
+  const balanceEgp = money(estimate.totalEgp - estimate.depositEgp);
+  const balance = await pending(created.orderId, "balance", balanceEgp);
+  await settleVerifiedPayment(balance.id, balance.ref, balanceEgp);
+  assert.equal((await getOrder(created.orderId)).status, "closed");
 });
 test("unpaid quotes expire and demo FX endpoint returns exact contract rates", async () => {
   const order = (await getOrder("demo-dining"));

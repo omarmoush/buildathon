@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "wouter";
 import Furniture3D from "./Furniture3D";
 import { EstimateCard } from "../quiz/EstimateCard";
-import { api, ApiError } from "../quiz/api";
+import { api, ApiError, openPaymobCheckout } from "../quiz/api";
 import { demoCatalog, demoOrder } from "../quiz/demo";
 import type { BuyerOrder, Language } from "../quiz/types";
 import { BrandHeader, EscrowSteps } from "../quiz/BrandHeader";
@@ -106,12 +106,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
       if (demo) { demoAction(path); return; }
       const result = await api<{ checkoutUrl?: string }>(`${base}/${path}`, body);
       if (path === "pay" || result.checkoutUrl) {
-        if (!result.checkoutUrl) throw new Error("Missing checkout URL");
-        const target = new URL(result.checkoutUrl);
-        const host = target.hostname;
-        if (target.protocol !== "https:" || target.username || target.password ||
-          !(host === "paymob.com" || host.endsWith(".paymob.com") || host === "paymobsolutions.com" || host.endsWith(".paymobsolutions.com"))) throw new Error("Unexpected checkout URL");
-        window.location.assign(target.href);
+        openPaymobCheckout(result.checkoutUrl);
         return;
       }
       setNotice(t("تم إرسال الإجراء. نحدّث حالة الطلب…", "Action submitted. Refreshing order status…"));
@@ -125,6 +120,11 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
   }
   const quote = order?.quote;
   const paymentsUnavailable = !demo && order?.paymentMode === "unavailable";
+  // Before any quote, the deposit is paid upfront on the saved estimate (same amounts the server charges).
+  const payable = quote ?? order?.estimate;
+  const depositStarted = !!order?.payments.some(p => p.type === "deposit");
+  const upfrontDeposit = !demo && !quote && !!order?.estimate && order.estimate.depositEgp > 0
+    && ["requested", "design_review"].includes(order.status) && !depositStarted;
   const validQuote = quote && Number.isFinite(quote.fxRate) && quote.fxRate > 0
     && Number.isFinite(quote.depositEgp) && quote.depositEgp >= 0 && quote.depositEgp <= quote.totalEgp;
   const quoteExpired = !quote || !Number.isFinite(Date.parse(quote.expiresAt)) || Date.parse(quote.expiresAt) <= now;
@@ -182,6 +182,15 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
                 : order.spec.bedroomPieces?.length ? <p>{order.spec.bedroomPieces.map(piece => labels[piece] || piece).join(" • ")}</p> : null}
               {order.spec.notes && <p>{order.spec.notes}</p>}
             </section>
+            {upfrontDeposit && <section className="wb-card" data-testid="upfront-deposit">
+              <h2>{t("ادفع العربون لتأكيد طلبك", "Pay the deposit to confirm your request")}</h2>
+              <p>{t("العربون", "Deposit")}: <strong>{money(order.estimate!.depositEgp)}</strong></p>
+              {paymentsUnavailable
+                ? <p className="wb-notice">{t("الدفع الإلكتروني غير متصل حالياً. تواصل مع الورشة.", "Online payments are not connected right now. Contact the workshop.")}</p>
+                : <button className="wb-primary" disabled={pending} onClick={() => action("pay", { type: "deposit" })} data-testid="pay-upfront-deposit">{t("ادفع العربون عبر Paymob", "Pay deposit with Paymob")}</button>}
+            </section>}
+            {!quote && ["requested", "design_review"].includes(order.status) && order.payments.some(p => p.type === "deposit" && p.state === "pending") &&
+              <p className="wb-notice" role="status">{t("ننتظر تأكيد Paymob لدفع العربون. قد يستغرق ذلك دقيقة؛ ستتحدث الصفحة تلقائياً.", "Waiting for Paymob to confirm your deposit. This can take a minute; this page refreshes automatically.")}</p>}
             {order.status === "requested" && <p className="wb-notice">{t("استلمت الورشة طلبك. ستراجع التفاصيل وترسل التصميم للموافقة.", "The workshop received your request and will share the design for approval.")}</p>}
             {order.review && <section className="wb-card">
               <h2>{t("مراجعة الورشة", "Workshop review")}</h2>
@@ -209,8 +218,8 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
             {order.status === "ready" && <section className="wb-card"><h2>{t("استلمت الأثاث؟", "Received your furniture?")}</h2>
               <p>{t("تأكد من وصول القطع وفحصها قبل التأكيد. ينقل التأكيد إلى دفع الرصيد المتبقي.", "Check that all pieces have arrived and inspect them before confirming. Confirmation proceeds to balance payment.")}</p>
               {deliveryConfirm ? <div className="wb-stack" role="group" aria-label={t("تأكيد التسليم", "Confirm receipt")}>
-                <p>{t("أؤكد أنني استلمت الأثاث وفحصته. يستحق المتبقي بالجنيه المصري:", "I confirm the furniture arrived and I inspected it. Balance due in EGP:")} {validQuote ? money(Math.max(0, quote!.totalEgp - quote!.depositEgp)) : "—"}</p>
-                <button className="wb-primary" disabled={pending || !validQuote || paymentsUnavailable} onClick={() => action("confirm-delivery")} data-testid="confirm-delivery">{demo ? t("محاكاة استلام الأثاث", "Simulate delivery confirmation") : t("تأكيد الاستلام ومتابعة دفع المتبقي", "Confirm receipt & continue to balance payment")}</button>
+                <p>{t("أؤكد أنني استلمت الأثاث وفحصته. يستحق المتبقي بالجنيه المصري:", "I confirm the furniture arrived and I inspected it. Balance due in EGP:")} {payable && (quote ? validQuote : true) ? money(Math.max(0, payable.totalEgp - payable.depositEgp)) : "—"}</p>
+                <button className="wb-primary" disabled={pending || (quote ? !validQuote : !payable) || paymentsUnavailable} onClick={() => action("confirm-delivery")} data-testid="confirm-delivery">{demo ? t("محاكاة استلام الأثاث", "Simulate delivery confirmation") : t("تأكيد الاستلام ومتابعة دفع المتبقي", "Confirm receipt & continue to balance payment")}</button>
                 <button disabled={pending} onClick={() => setDeliveryConfirm(false)}>{t("إلغاء", "Cancel")}</button>
               </div> : <button className="wb-primary" disabled={paymentsUnavailable} onClick={() => setDeliveryConfirm(true)} data-testid="start-delivery">{t("تأكيد استلام الأثاث", "Confirm delivery received")}</button>}
               {paymentsUnavailable && <p className="wb-notice">{t("تأكيد التسليم ودفع المتبقي غير متاحين حتى ربط مزوّد الدفع. تواصل مع الورشة.", "Delivery confirmation and balance payment are unavailable until a payment provider is connected. Contact the workshop.")}</p>}

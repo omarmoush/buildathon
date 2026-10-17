@@ -24,6 +24,8 @@ quotesRouter.post("/orders/:id/quote", requireOwner, async (req, res) => {
   if (!order.designApproved || order.status !== "design_review") throw new ApiError(409, "The buyer must approve the design before quoting.");
   if (order.review?.decision === "changes_requested") throw new ApiError(409, "Accept the workshop review before sending a final quote.");
   if (order.quote) throw new ApiError(409, "Quotes are locked and cannot be overwritten.");
+  if (order.payments.some(payment => payment.type === "deposit"))
+    throw new ApiError(409, "The buyer already started paying the deposit on the estimate.");
   if (data.displayCurrency === "EGP" && data.fxRate !== 1) throw new ApiError(400, "The EGP exchange rate must be 1.");
   const totalEgp = money((data.materialsEgp + data.laborEgp) * (1 + data.marginPercent / 100));
   if (totalEgp <= 0) throw new ApiError(400, "Quote total must be positive.");
