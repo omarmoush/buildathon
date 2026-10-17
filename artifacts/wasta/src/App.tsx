@@ -24,6 +24,9 @@ import { DemoRateControl, MarginWarning, RateWhatIf } from '@/owner/RateTools';
 import { OrderSpecification } from '@/owner/OrderSpecification';
 import { OwnerDialog } from '@/owner/OwnerDialog';
 import { DEFAULT_TARGET_MARGIN, DEMO_USD_RATE, needsAttention, quotePreview, quoteRisk, releasedMoney, requestsFirst } from '@/owner/quote-math';
+import { QuizPage } from '@/quiz';
+import { BuyerPage as PublicBuyerPage } from '@/buyer';
+import { api as publicApi } from '@/quiz/api';
 
 type Language = 'ar' | 'en';
 const LanguageContext = createContext<{ lang: Language; setLang: (lang: Language) => void }>({ lang: 'ar', setLang: () => undefined });
@@ -45,14 +48,14 @@ const stageIndex: Record<string, number> = { requested: 0, draft: 0, design_revi
 const statusTone = (s: OrderStatus) => ['deposit_paid', 'in_production', 'closed'].includes(s) ? 'status-green' : ['design_review', 'quoted', 'ready'].includes(s) ? 'status-orange' : ['cancelled', 'expired'].includes(s) ? 'status-red' : 'status-gray';
 const money = (value?: number, currency = 'EGP') => `${new Intl.NumberFormat('en-US', { minimumFractionDigits: currency === 'EGP' ? 0 : 2, maximumFractionDigits: currency === 'EGP' ? 0 : 2 }).format(value || 0)} ${currency}`;
 const dateShort = (value: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
-const buyerHref = (token: string) => `${window.location.origin}/b/${token}`;
+const buyerHref = (token: string) => `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}/b/${encodeURIComponent(token)}`;
 const whatsappHref = (phone: string, message: string, country = 'Egypt') => {
   let digits = phone.replace(/\D/g, '');
   if (digits.startsWith('00')) digits = digits.slice(2);
   if (digits.startsWith('0')) {
     const normalizedCountry = country.toLowerCase();
-    const dialCode = normalizedCountry.includes('saudi') || normalizedCountry.includes('riyadh') || normalizedCountry.includes('السعود') ? '966'
-      : normalizedCountry.includes('emirates') || normalizedCountry.includes('uae') || normalizedCountry.includes('dubai') || normalizedCountry.includes('الإمارات') ? '971'
+    const dialCode = normalizedCountry === 'sa' || normalizedCountry.includes('saudi') || normalizedCountry.includes('riyadh') || normalizedCountry.includes('السعود') ? '966'
+      : normalizedCountry === 'ae' || normalizedCountry.includes('emirates') || normalizedCountry.includes('uae') || normalizedCountry.includes('dubai') || normalizedCountry.includes('الإمارات') ? '971'
         : '20';
     digits = `${dialCode}${digits.slice(1)}`;
   }
@@ -76,8 +79,8 @@ const whatsappOrderMessage = (buyerName: string, title: string, status: string, 
 const demoFxRates: Record<Currency, number> = { EGP: 1, SAR: 13.1, AED: 13.35, USD: 48.5 };
 const suggestedCurrency = (country: string): Currency => {
   const normalized = country.toLowerCase();
-  if (normalized.includes('saudi') || normalized.includes('riyadh') || normalized.includes('السعود')) return 'SAR';
-  if (normalized.includes('emirates') || normalized.includes('dubai') || normalized.includes('الإمارات') || normalized.includes('دبي')) return 'AED';
+  if (normalized === 'sa' || normalized.includes('saudi') || normalized.includes('riyadh') || normalized.includes('السعود')) return 'SAR';
+  if (normalized === 'ae' || normalized.includes('emirates') || normalized.includes('dubai') || normalized.includes('الإمارات') || normalized.includes('دبي')) return 'AED';
   return 'EGP';
 };
 
@@ -209,9 +212,9 @@ function OwnerLogin() {
 function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopName: string }; onLogout: () => void }) {
   const t = useTranslation();
   const { lang } = useLanguage();
-  const dashboard = useGetDashboard();
-  const ordersQuery = useListOrders();
-  const notifications = useListNotifications();
+  const dashboard = useGetDashboard({ query: { refetchInterval: 15000 } });
+  const ordersQuery = useListOrders({ query: { refetchInterval: 15000 } });
+  const notifications = useListNotifications({ query: { refetchInterval: 15000 } });
   const [filter, setFilter] = useState('all');
   const [demoUsdRate, setDemoUsdRate] = useState(DEMO_USD_RATE);
   const [targetMargin, setTargetMargin] = useState(DEFAULT_TARGET_MARGIN);
@@ -223,7 +226,7 @@ function DashboardPage({ owner, onLogout }: { owner: { name: string; workshopNam
     <div className="page-enter page-pad mx-auto max-w-6xl px-5 py-8 md:px-10 md:py-11">
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div><p className="text-sm font-semibold text-accent">{t('Your workshop', 'ورشتك')}</p><h1 className="font-display mt-1 text-3xl font-extrabold tracking-tight md:text-4xl">{t('Good to see you', 'أهلاً بيك')}{owner.name ? `، ${owner.name}` : ''}</h1><p className="mt-2 text-sm text-muted-foreground">{t('A clear view of every order in motion.', 'نظرة واضحة على كل طلب شغال.')}</p></div>
-        <Link href="/orders/new" className="btn btn-primary" data-testid="link-new-order"><Plus size={18} />{t('New custom order', 'طلب خاص جديد')}</Link>
+        <div className="flex flex-wrap gap-2"><Link href="/w/reda" className="btn btn-outline" data-testid="link-buyer-quiz">{t('Buyer request form', 'نموذج طلب العميل')}</Link><Link href="/orders/new" className="btn btn-primary" data-testid="link-new-order"><Plus size={18} />{t('New custom order', 'طلب خاص جديد')}</Link></div>
       </div>
       {dashboard.isLoading ? <div className="grid gap-4 md:grid-cols-3"><div className="skeleton h-32" /><div className="skeleton h-32" /><div className="skeleton h-32" /></div> : dashboard.isError ? <Problem onRetry={refresh} /> : <>
         <div className="grid gap-4 md:grid-cols-[1.1fr_1fr_1fr]">
@@ -346,7 +349,7 @@ function OrderDetailAuthed() {
   const t = useTranslation();
   const params = useParams<{ id: string }>();
   const id = params.id || '';
-  const orderQuery = useGetOrder(id, { query: { enabled: !!id, queryKey: getGetOrderQueryKey(id) } });
+  const orderQuery = useGetOrder(id, { query: { enabled: !!id, queryKey: getGetOrderQueryKey(id), refetchInterval: 10000 } });
   const order = orderQuery.data;
   if (orderQuery.isLoading) return <LoadingScreen />;
   if (orderQuery.isError || !order) return <AppFrame><Header showNotifications /><Problem message={t('We could not find this order.', 'لم نتمكن من العثور على هذا الطلب.')} onRetry={() => orderQuery.refetch()} /></AppFrame>;
@@ -364,6 +367,7 @@ function OrderDetailContent({ order }: { order: Order }) {
   const markReady = useMarkOrderReady();
   const [designFile, setDesignFile] = useState<File | null>(null);
   const [designNote, setDesignNote] = useState('');
+  const [startingDesign, setStartingDesign] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -390,6 +394,15 @@ function OrderDetailContent({ order }: { order: Order }) {
       await submitDesign.mutateAsync({ id: order.id, data: { imageUrl: uploaded.url, note: designNote } });
       await invalidateOrder(); setDesignFile(null); setDesignNote('');
     } catch { setFormError(tr('Design could not be shared. Use a JPEG, PNG, WebP, or GIF under 8 MB.', 'تعذرت مشاركة التصميم. استخدم صورة JPEG أو PNG أو WebP أو GIF أقل من ٨ ميجابايت.')); }
+  };
+  const startQuizDesign = async () => {
+    if (startingDesign) return;
+    setStartingDesign(true); setFormError('');
+    try {
+      await publicApi(`/api/orders/${encodeURIComponent(order.id)}/start-design`, {});
+      await invalidateOrder();
+    } catch { setFormError(tr('The design could not be sent for review. Refresh the order and try again.', 'تعذر إرسال التصميم للمراجعة. حدّث الطلب وحاول مجدداً.')); }
+    finally { setStartingDesign(false); }
   };
   const submitQuote = async (e: FormEvent) => {
     e.preventDefault(); setFormError('');
@@ -429,6 +442,7 @@ function OrderDetailContent({ order }: { order: Order }) {
         </section>
           {!['closed', 'cancelled', 'expired'].includes(order.status) && <>
            {['requested', 'draft', 'design_review'].includes(order.status) && <section className="surface p-5 md:p-6"><div className="flex items-start justify-between gap-3"><div><h2 className="font-display text-lg font-bold">{t('Share a design', 'مشاركة التصميم')}</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('Send a sketch or render for the buyer to review on their private link.', 'أرسل رسماً أو تصوراً للمراجعة من خلال الرابط الخاص بالعميل.')}</p></div><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent"><FileImage size={17} /></div></div>
+             {order.status === ('requested' as OrderStatus) && (order as Order & { spec?: { glbUrl?: string } }).spec?.glbUrl && <Button className="btn-primary mt-4" disabled={startingDesign} onClick={startQuizDesign} data-testid="button-start-quiz-design">{startingDesign ? <LoaderCircle size={17} className="animate-spin" /> : <Check size={17} />}{t('Send selected 3D design for approval', 'إرسال التصميم الثلاثي الأبعاد للموافقة')}</Button>}
              <form className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto]" onSubmit={shareDesign}><label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-3 text-sm text-muted-foreground"><Upload size={16} /><span className="truncate">{designFile?.name || t('Choose design image', 'اختر صورة التصميم')}</span><input data-testid="input-design-image" type="file" accept="image/*" className="sr-only" onChange={e => setDesignFile(e.target.files?.[0] || null)} /></label><input data-testid="input-design-note" className="input min-h-11" value={designNote} onChange={e => setDesignNote(e.target.value)} placeholder={t('A note for the buyer', 'ملاحظة للعميل')} /><Button type="submit" className="btn-primary" disabled={!designFile || submitDesign.isPending || upload.isPending}>{submitDesign.isPending || upload.isPending ? <LoaderCircle size={17} className="animate-spin" /> : <ArrowUpRight size={17} />}{t('Share', 'مشاركة')}</Button></form>
              {order.designChangeNote && <p className="mt-3 rounded-xl bg-accent/10 p-3 text-sm leading-6">{t('Buyer requested: ', 'طلب العميل: ')}{order.designChangeNote}</p>}
              {order.designApprovedAt && <p className="mt-3 rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-900">{t('The buyer approved this design.', 'اعتمد العميل هذا التصميم.')}</p>}
@@ -613,7 +627,9 @@ function Router() {
     <Route path="/owner/orders/:id" component={OrderDetailPage} />
     <Route path="/orders/new" component={NewOrderPage} />
     <Route path="/orders/:id" component={OrderDetailPage} />
-    <Route path="/b/:token" component={BuyerPage} />
+    <Route path="/quiz" component={QuizPage} />
+    <Route path="/w/reda" component={QuizPage} />
+    <Route path="/b/:token" component={PublicBuyerPage} />
     <Route><NotFound /></Route>
   </Switch></ErrorBoundary>;
 }

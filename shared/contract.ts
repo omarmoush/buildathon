@@ -21,6 +21,9 @@ export interface OrderSpec {
   deliveryCity: string;
   wantedBy: string;
   notes: string;
+  referencePhotos?: string[];
+  bedroomPieces?: string[];
+  generationTaskId?: string;
 }
 export interface Quote {
   materialsEgp: number;
@@ -66,7 +69,7 @@ export interface CheckoutResponse { checkoutUrl: string }
 export interface UploadResponse { url: string }
 export interface FxRates { SAR: number; AED: number; USD: number }
 export interface CatalogItem {
-  id: string; name: string; thumbnailUrl: string; glbUrl: string; usdzUrl: string;
+  id: string; name: string; nameAr?: string; thumbnailUrl: string; glbUrl: string; usdzUrl?: string;
   defaultDims: Dimensions; woods: string[]; finishes: string[];
 }
 export interface MeshyTask {

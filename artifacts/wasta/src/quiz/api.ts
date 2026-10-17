@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(public status: number) { super(`Request failed (${status})`); }
+  constructor(public status: number, public code?: string) { super(`Request failed (${status})`); }
 }
 
 // Never turn a failed live mutation into a successful mock response.
@@ -11,6 +11,9 @@ export async function api<T>(path: string, body?: unknown, signal?: AbortSignal)
     signal: signal ?? AbortSignal.timeout(20_000),
     credentials: "same-origin",
   });
-  if (!response.ok) throw new ApiError(response.status);
+  if (!response.ok) {
+    const error = await response.json().catch(() => null) as { code?: string } | null;
+    throw new ApiError(response.status, typeof error?.code === "string" ? error.code : undefined);
+  }
   return response.json() as Promise<T>;
 }

@@ -144,6 +144,7 @@ export function getOrder(identifier: string, byToken = false) {
     ownerName: row.owner_name, ownerPhone: row.owner_phone, workshopName: row.workshop_name,
     title: row.title, description: row.description, dimensions: row.dimensions, magicToken: row.token,
     designApprovedAt: row.design_approved_at, designChangeNote: row.design_change_note, progress: updates,
+    paymentMode: "unavailable" as const,
   };
 }
 export function listOrders(ownerId = "reda") {

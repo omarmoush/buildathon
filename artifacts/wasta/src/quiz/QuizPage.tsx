@@ -94,6 +94,7 @@ export default function QuizPage() {
   }
   async function upload(file?: File) {
     if (!file) return;
+    if ((spec.referencePhotos?.length || 0) >= 5) { setError(t("يمكنك إرفاق ٥ صور كحد أقصى.", "You can attach up to five photos.")); return; }
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) {
       setError(t("اختر صورة JPG أو PNG أو WebP أقل من ٨ ميجابايت.", "Choose a JPG, PNG or WebP under 8 MB.")); return;
     }
@@ -140,7 +141,7 @@ export default function QuizPage() {
               onClick={() => patch({ style: spec.style.includes(value) ? spec.style.filter(s => s !== value) : [...spec.style, value] })}>
               <img src={`https://images.unsplash.com/${photo}?auto=format&fit=crop&w=500&q=70`} alt="" /><strong>{label}</strong>
             </button>)}</div>
-          <label>{t("صورة مرجعية (اختياري)", "Reference photo (optional)")}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || demo} onChange={e => upload(e.target.files?.[0])} /></label>
+          <label>{t("صورة مرجعية (اختياري)", "Reference photo (optional)")}<input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading || demo || (spec.referencePhotos?.length || 0) >= 5} onChange={e => upload(e.target.files?.[0])} /></label>
           {uploading && <p role="status">{t("جارٍ رفع الصورة…", "Uploading photo…")}</p>}
           {spec.referencePhotos?.map(url => <img key={url} src={url} alt={t("صورتك المرجعية", "Your reference photo")} width={100} />)}
         </>}

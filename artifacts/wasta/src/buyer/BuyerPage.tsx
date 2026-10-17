@@ -113,11 +113,14 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
       setNotice(t("تم إرسال الإجراء. نحدّث حالة الطلب…", "Action submitted. Refreshing order status…"));
       setDeliveryConfirm(false);
       try { await refresh(); } catch { setNotice(t("تم إرسال الإجراء، لكن تعذّر تحديث الحالة. أعد التحميل قبل تكراره.", "Action submitted, but status refresh failed. Reload before repeating it.")); }
-    } catch {
-      setError(t("لم يتم تأكيد الإجراء. أعد تحميل الحالة قبل المحاولة مجدداً. لا تعتبر العودة من صفحة الدفع تأكيداً للتحصيل.", "The action was not confirmed. Reload the status before retrying. Returning from checkout is not proof of payment."));
+    } catch (err) {
+      setError(err instanceof ApiError && (err.code === "PAYMENTS_UNAVAILABLE" || err.status === 503)
+        ? t("الدفع الإلكتروني غير متصل حالياً. لم يتم تحصيل أي مبلغ أو تغيير حالة الدفع. تواصل مع الورشة.", "Online payments are not connected. No amount was collected and no payment state was changed. Contact the workshop.")
+        : t("لم يتم تأكيد الإجراء. أعد تحميل الحالة قبل المحاولة مجدداً. لا تعتبر العودة من صفحة الدفع تأكيداً للتحصيل.", "The action was not confirmed. Reload the status before retrying. Returning from checkout is not proof of payment."));
     } finally { mutation.current = false; setPending(false); }
   }
   const quote = order?.quote;
+  const paymentsUnavailable = !demo && order?.paymentMode === "unavailable";
   const validQuote = quote && Number.isFinite(quote.fxRate) && quote.fxRate > 0
     && Number.isFinite(quote.depositEgp) && quote.depositEgp >= 0 && quote.depositEgp <= quote.totalEgp;
   const quoteExpired = !quote || !Number.isFinite(Date.parse(quote.expiresAt)) || Date.parse(quote.expiresAt) <= now;
@@ -146,6 +149,12 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
           <section className="wb-stack">
             <Furniture3D model={order.spec} lang={lang} dimensions={order.spec.dimensions}
               baseDimensions={order.spec.pieceSource === "customized" ? demoCatalog.find(item => item.id === order.spec.catalogItemId)?.defaultDims : undefined} />
+            {order.images?.some(image => image.kind === "design") && <section className="wb-card">
+              <h2>{t("تصاميم الورشة للمراجعة", "Workshop designs for review")}</h2>
+              <p className="wb-muted">{t("راجع أحدث الصور قبل الموافقة؛ النموذج الثلاثي الأبعاد هو القطعة التي اخترتها في الطلب.", "Review the latest images before approving; the 3D model is the piece selected in your request.")}</p>
+              <div className="wb-grid">{order.images.filter(image => image.kind === "design").slice().reverse().map((image, index) =>
+                <a key={image.id || index} href={image.url} target="_blank" rel="noreferrer"><img src={image.url} alt={t("تصميم الورشة", "Workshop design")} loading="lazy" style={{ width: "100%", borderRadius: 12 }} /></a>)}</div>
+            </section>}
             <section className="wb-card"><h2>{t("مواصفات التصميم", "Design specification")}</h2>
               <dl>
                 <dt>{t("المنتج", "Product")}</dt><dd>{labels[order.spec.productType] || order.spec.productType}</dd>
@@ -161,6 +170,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
             </section>
             {order.status === "requested" && <p className="wb-notice">{t("استلمت الورشة طلبك. ستراجع التفاصيل وترسل التصميم للموافقة.", "The workshop received your request and will share the design for approval.")}</p>}
             {order.status === "design_review" && <section className="wb-card"><h2>{t("راجع التصميم", "Review the design")}</h2>
+              {order.designChangeNote && <p className="wb-notice">{t("التعديلات التي طلبتها:", "Your requested changes:")} {order.designChangeNote}</p>}
               {order.designApproved ? <p className="wb-badge">{t("اعتمدت التصميم. ننتظر عرض سعر الورشة.", "Design approved. Waiting for the workshop's quote.")}</p> : <>
                 <button className="wb-primary" disabled={pending} onClick={() => action("approve-design")} data-testid="approve-design">{t("موافق على التصميم", "Approve design")}</button>
                 <label>{t("التعديلات المطلوبة", "Requested changes")}<textarea maxLength={2000} value={comment} onChange={e => setComment(e.target.value)} /></label>
@@ -168,7 +178,7 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
               </>}
             </section>}
             {["deposit_paid", "in_production", "ready", "delivered", "closed"].includes(order.status) && <section className="wb-card">
-              {order.payments.some(p => p.type === "deposit" && p.state === "held") && <p className="wb-badge">{t("عربونك محمي حتى تأكيد التسليم", "Your deposit is protected until delivery confirmation")}</p>}
+              {order.payments.some(p => p.type === "deposit" && p.state === "held") && <p className="wb-badge">{t("العربون مسجّل كمحتجز حتى التسليم", "Deposit recorded as held until delivery")}</p>}
               <h2>{t("تقدم التصنيع", "Production progress")}</h2>
               {order.updates.length ? <ol className="wb-timeline">{order.updates.map((update, index) => <li key={update.id || index}>
                 <strong>{labels[update.stage] || statusText[update.stage] || update.stage}</strong><p>{update.note}</p>
@@ -180,9 +190,10 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
               <p>{t("تأكد من وصول القطع وفحصها قبل التأكيد. ينقل التأكيد إلى دفع الرصيد المتبقي.", "Check that all pieces have arrived and inspect them before confirming. Confirmation proceeds to balance payment.")}</p>
               {deliveryConfirm ? <div className="wb-stack" role="group" aria-label={t("تأكيد التسليم", "Confirm receipt")}>
                 <p>{t("أؤكد أنني استلمت الأثاث وفحصته. يستحق المتبقي بالجنيه المصري:", "I confirm the furniture arrived and I inspected it. Balance due in EGP:")} {validQuote ? money(Math.max(0, quote!.totalEgp - quote!.depositEgp)) : "—"}</p>
-                <button className="wb-primary" disabled={pending || !validQuote} onClick={() => action("confirm-delivery")} data-testid="confirm-delivery">{t("تأكيد الاستلام ومتابعة دفع المتبقي", "Confirm receipt & continue to balance payment")}</button>
+                <button className="wb-primary" disabled={pending || !validQuote || paymentsUnavailable} onClick={() => action("confirm-delivery")} data-testid="confirm-delivery">{demo ? t("محاكاة استلام الأثاث", "Simulate delivery confirmation") : t("تأكيد الاستلام ومتابعة دفع المتبقي", "Confirm receipt & continue to balance payment")}</button>
                 <button disabled={pending} onClick={() => setDeliveryConfirm(false)}>{t("إلغاء", "Cancel")}</button>
-              </div> : <button className="wb-primary" onClick={() => setDeliveryConfirm(true)} data-testid="start-delivery">{t("تأكيد استلام الأثاث", "Confirm delivery received")}</button>}
+              </div> : <button className="wb-primary" disabled={paymentsUnavailable} onClick={() => setDeliveryConfirm(true)} data-testid="start-delivery">{t("تأكيد استلام الأثاث", "Confirm delivery received")}</button>}
+              {paymentsUnavailable && <p className="wb-notice">{t("تأكيد التسليم ودفع المتبقي غير متاحين حتى ربط مزوّد الدفع. تواصل مع الورشة.", "Delivery confirmation and balance payment are unavailable until a payment provider is connected. Contact the workshop.")}</p>}
             </section>}
             {order.status === "closed" && <section className="wb-card"><h2>{t("شكراً لثقتك في ورشة رضا", "Thank you for choosing Reda's workshop")}</h2><p>{t("اكتمل طلبك. احتفظ بهذا الرابط كسجل للتصميم والدفعات.", "Your order is complete. Keep this link as a record of the design and payments.")}</p></section>}
             {["cancelled", "expired"].includes(order.status) && <p className="wb-notice">{t("هذا الطلب غير متاح للدفع. تواصل مع الورشة لتجديده.", "This order is not payable. Contact the workshop to renew it.")}</p>}
@@ -203,8 +214,12 @@ export default function BuyerPage({ token: suppliedToken }: { token?: string }) 
               {order.status === "quoted" && <>
                 {quoteExpired && <p className="wb-error">{t("انتهت صلاحية السعر. اطلب عرضاً جديداً من الورشة.", "This quote expired. Request a new quote from the workshop.")}</p>}
                 {!validQuote && <p className="wb-error">{t("بيانات السعر غير مكتملة. تواصل مع الورشة.", "Quote details are incomplete. Contact the workshop.")}</p>}
-                <button className="wb-primary" disabled={pending || quoteExpired || !validQuote || !order.designApproved} onClick={() => action("pay", { type: "deposit" })} data-testid="pay-deposit">{t("دفع العربون عبر Paymob", "Pay deposit via Paymob")}</button>
+                {paymentsUnavailable && <p className="wb-notice">{t("الدفع الإلكتروني غير متصل. يمكنك مراجعة العرض لكن لن يتم تحصيل أي مبلغ. حالات «محتجز/محوّل» في النسخة الحالية هي سجلات وليست ضماناً مالياً من المزوّد.", "Online payments are not connected. You can review the quote, but no money will be collected. Held/released labels are bookkeeping, not provider escrow.")}</p>}
+                <button className="wb-primary" disabled={pending || quoteExpired || !validQuote || !order.designApproved || paymentsUnavailable} onClick={() => action("pay", { type: "deposit" })} data-testid="pay-deposit">{demo ? t("محاكاة دفع العربون", "Simulate deposit payment") : t("دفع العربون", "Pay deposit")}</button>
               </>}
+            </section>}
+            {order.ownerPhone && <section className="wb-card"><h2>{order.workshopName || t("تواصل مع الورشة", "Contact the workshop")}</h2>
+              <a className="wb-link" href={`https://wa.me/${order.ownerPhone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">{t("تواصل عبر واتساب", "Contact on WhatsApp")}</a>
             </section>}
             <section className="wb-card"><h2>{t("مراحل طلبك", "Order milestones")}</h2>
               <ol className="wb-timeline">{stageOrder.filter(s => s !== "delivered").map((stage, index) => <li key={stage} aria-current={stage === order.status ? "step" : undefined}>

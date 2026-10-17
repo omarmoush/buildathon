@@ -1,8 +1,12 @@
-import { createElement, useEffect, useRef, useState } from 'react';
 import type { Order } from '@workspace/api-client-react';
+import Furniture3D from '../buyer/Furniture3D';
+import { demoCatalog } from '../quiz/demo';
 
 type Spec = {
   productType?: string;
+  pieceSource?: string;
+  catalogItemId?: string;
+  bedroomPieces?: string[];
   style?: string[];
   dimensions?: { w?: number; d?: number; h?: number };
   wood?: string;
@@ -25,6 +29,7 @@ export function OrderSpecification({ order, lang }: { order: Order; lang: 'ar' |
   const details = [
     [tr('Product', 'المنتج'), spec.productType],
     [tr('Style', 'الطراز'), Array.isArray(spec.style) ? spec.style.join(' · ') : undefined],
+    [tr('Included pieces', 'القطع المطلوبة'), spec.bedroomPieces?.join(' · ')],
     [tr('Dimensions · cm', 'الأبعاد · سم'), spec.dimensions ? [spec.dimensions.w, spec.dimensions.d, spec.dimensions.h].map(value => value ?? '—').join(' × ') : undefined],
     [tr('Wood', 'الخشب'), spec.wood],
     [tr('Finish', 'التشطيب'), spec.finish],
@@ -49,44 +54,20 @@ function assetUrl(value?: string) {
 
 function ModelPreview({ spec, lang }: { spec: Spec; lang: 'ar' | 'en' }) {
   const tr = (en: string, ar: string) => lang === 'ar' ? ar : en;
-  const viewer = useRef<HTMLElement>(null);
-  const [failed, setFailed] = useState(false);
   const glb = assetUrl(spec.glbUrl);
   const usdz = assetUrl(spec.usdzUrl);
-  useEffect(() => {
-    if (!glb) return;
-    setFailed(false);
-    let script = document.querySelector<HTMLScriptElement>('script[data-owner-model-viewer]');
-    if (!customElements.get('model-viewer') && !script) {
-      script = document.createElement('script');
-      script.type = 'module';
-      script.src = 'https://unpkg.com/@google/model-viewer@4.1.0/dist/model-viewer.min.js';
-      script.dataset.ownerModelViewer = 'true';
-      document.head.appendChild(script);
-    }
-    const onError = () => setFailed(true);
-    script?.addEventListener('error', onError);
-    const element = viewer.current;
-    element?.addEventListener('error', onError);
-    return () => {
-      script?.removeEventListener('error', onError);
-      element?.removeEventListener('error', onError);
-    };
-  }, [glb]);
   if (!glb) return null;
+  const dims = spec.dimensions;
+  const dimensions = dims && typeof dims.w === 'number' && typeof dims.d === 'number' && typeof dims.h === 'number'
+    && dims.w > 0 && dims.d > 0 && dims.h > 0 ? { w: dims.w, d: dims.d, h: dims.h } : undefined;
+  const base = spec.pieceSource === 'customized' ? demoCatalog.find(item => item.id === spec.catalogItemId)?.defaultDims : undefined;
   return <div className="mt-5 overflow-hidden rounded-xl border border-border" data-testid="owner-model-preview">
     <p className="px-4 pt-4 text-sm font-bold">{tr('Buyer’s 3D piece', 'قطعة العميل ثلاثية الأبعاد')}</p>
-    {!failed && createElement('model-viewer', {
-      ref: viewer, src: glb, 'ios-src': usdz, poster: assetUrl(spec.thumbnailUrl),
-      'camera-controls': true, 'touch-action': 'pan-y', ar: true,
-      'ar-modes': 'webxr scene-viewer quick-look',
-      alt: tr('Interactive furniture model', 'نموذج أثاث تفاعلي'),
-      style: { width: '100%', height: '300px' },
-    })}
-    {failed && <p role="status" className="p-4 text-sm text-muted-foreground">{tr('The 3D viewer could not load. You can still open the model below.', 'تعذر تحميل العارض. يمكنك فتح ملف النموذج أدناه.')}</p>}
+    <div className="wb wb-embedded"><Furniture3D model={{ glbUrl: glb, usdzUrl: usdz, thumbnailUrl: assetUrl(spec.thumbnailUrl) }}
+      dimensions={dimensions} baseDimensions={base} lang={lang} /></div>
     <div className="flex flex-wrap gap-3 p-4">
       <a className="btn btn-outline" href={glb} target="_blank" rel="noreferrer">{tr('Open 3D file', 'فتح النموذج')}</a>
-      {usdz && <a className="btn btn-outline" href={usdz} rel="ar">{tr('View in AR · supported iPhone/iPad', 'عرض في المكان · آيفون وآيباد المدعومان')}</a>}
+      {usdz && !base && <a className="btn btn-outline" href={usdz} rel="ar">{tr('View in AR · supported iPhone/iPad', 'عرض في المكان · آيفون وآيباد المدعومان')}</a>}
     </div>
   </div>;
 }
