@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Wasta"
+description = "A bilingual Arabic-first order and payment-protection tool for small Egyptian workshops, helping owners quote, share progress, and collect milestone-based payments from buyers through a secure no-account link."
+version = "1.0.0"
+id = "artifacts/wasta"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19364
+
+[services.development]
+run = "pnpm --filter @workspace/wasta run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/wasta", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/wasta/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19364"
+BASE_PATH = "/"

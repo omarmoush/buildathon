@@ -3,20 +3,22 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Wasta workshop order and milestone payment API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: orders
+  - name: buyer
+  - name: notifications
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +26,369 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/login:
+    post:
+      operationId: loginOwner
+      tags: [auth]
+      summary: Sign in with workshop phone and PIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Owner"
+        "401":
+          description: Invalid phone or PIN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /auth/session:
+    get:
+      operationId: getOwnerSession
+      tags: [auth]
+      summary: Get the signed-in workshop owner
+      responses:
+        "200":
+          description: Active owner session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Owner"
+        "401":
+          description: Not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /auth/logout:
+    post:
+      operationId: logoutOwner
+      tags: [auth]
+      summary: Sign out
+      responses:
+        "200":
+          description: Signed out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [orders]
+      summary: Get order and payment totals for the owner
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Dashboard"
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List workshop orders
+      responses:
+        "200":
+          description: Orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Create a draft order and buyer magic link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderInput"
+      responses:
+        "201":
+          description: Created order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /uploads:
+    post:
+      operationId: uploadImage
+      tags: [orders]
+      summary: Save an image file to the app's local uploads folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInput"
+      responses:
+        "201":
+          description: Local image URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResult"
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get an order and its complete timeline
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /orders/{id}/images:
+    post:
+      operationId: addOrderImage
+      tags: [orders]
+      summary: Attach a locally uploaded reference image to an order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderImageInput"
+      responses:
+        "201":
+          description: Image attached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderImage"
+  /orders/{id}/design:
+    post:
+      operationId: submitDesign
+      tags: [orders]
+      summary: Share a design or sketch for buyer review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesignInput"
+      responses:
+        "200":
+          description: Design shared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /orders/{id}/quote:
+    post:
+      operationId: saveQuote
+      tags: [orders]
+      summary: Lock a quote and set its expiry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteInput"
+      responses:
+        "200":
+          description: Locked quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /orders/{id}/progress:
+    post:
+      operationId: postProgress
+      tags: [orders]
+      summary: Add a production update and optional photo
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgressInput"
+      responses:
+        "201":
+          description: Progress update
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /orders/{id}/ready:
+    post:
+      operationId: markOrderReady
+      tags: [orders]
+      summary: Mark an order ready for delivery confirmation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Order marked ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List recent owner notifications
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+  /buyer/{token}:
+    get:
+      operationId: getBuyerOrder
+      tags: [buyer]
+      summary: Open a buyer order without an account
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Buyer order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          description: Link not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /buyer/{token}/design-decision:
+    post:
+      operationId: decideOnDesign
+      tags: [buyer]
+      summary: Approve a design or ask for changes
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DesignDecisionInput"
+      responses:
+        "200":
+          description: Design decision saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /buyer/{token}/deposit:
+    post:
+      operationId: payDeposit
+      tags: [buyer]
+      summary: Record a simulated deposit payment held until delivery
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentInput"
+      responses:
+        "200":
+          description: Deposit held
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+  /buyer/{token}/delivery:
+    post:
+      operationId: confirmDelivery
+      tags: [buyer]
+      summary: Confirm delivery and record simulated balance payment
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentInput"
+      responses:
+        "200":
+          description: Delivery confirmed and payments released
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
 components:
   schemas:
     HealthStatus:
@@ -31,6 +396,200 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
-
+      required: [status]
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+    LoginInput:
+      type: object
+      properties:
+        phone:
+          type: string
+          minLength: 6
+        pin:
+          type: string
+          pattern: "^[0-9]{4}$"
+      required: [phone, pin]
+    Owner:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        workshopName: { type: string }
+        language: { type: string, enum: [ar, en] }
+      required: [id, name, phone, workshopName, language]
+    OrderStatus:
+      type: string
+      enum: [draft, design_review, quoted, deposit_paid, in_production, ready, delivered, closed, cancelled, expired]
+    Currency:
+      type: string
+      enum: [EGP, SAR, AED, USD]
+    OrderImage:
+      type: object
+      properties:
+        id: { type: string }
+        url: { type: string }
+        kind: { type: string, enum: [reference, design] }
+        createdAt: { type: string, format: date-time }
+      required: [id, url, kind, createdAt]
+    OrderImageInput:
+      type: object
+      properties:
+        url: { type: string, minLength: 1 }
+        kind: { type: string, enum: [reference, design] }
+      required: [url, kind]
+    UploadInput:
+      type: object
+      properties:
+        fileName: { type: string, minLength: 1 }
+        dataUrl: { type: string, minLength: 1 }
+      required: [fileName, dataUrl]
+    UploadResult:
+      type: object
+      properties:
+        url: { type: string }
+      required: [url]
+    Quote:
+      type: object
+      properties:
+        materialsCostEgp: { type: number }
+        laborCostEgp: { type: number }
+        marginPercent: { type: number }
+        totalEgp: { type: number }
+        displayCurrency: { $ref: "#/components/schemas/Currency" }
+        fxRateToEgp: { type: number }
+        totalDisplay: { type: number }
+        depositPercent: { type: number }
+        depositAmountDisplay: { type: number }
+        expiresAt: { type: string, format: date-time }
+        approvedAt: { type: ["string", "null"], format: date-time }
+      required: [materialsCostEgp, laborCostEgp, marginPercent, totalEgp, displayCurrency, fxRateToEgp, totalDisplay, depositPercent, depositAmountDisplay, expiresAt]
+    QuoteInput:
+      type: object
+      properties:
+        materialsCostEgp: { type: number, minimum: 0 }
+        laborCostEgp: { type: number, minimum: 0 }
+        marginPercent: { type: number, minimum: 0 }
+        displayCurrency: { $ref: "#/components/schemas/Currency" }
+        fxRateToEgp: { type: number, exclusiveMinimum: 0 }
+        expiresAt: { type: string, format: date-time }
+      required: [materialsCostEgp, laborCostEgp, marginPercent, displayCurrency, fxRateToEgp, expiresAt]
+    Payment:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [deposit, balance] }
+        amountDisplay: { type: number }
+        currency: { $ref: "#/components/schemas/Currency" }
+        amountEgp: { type: number }
+        state: { type: string, enum: [pending, held, released] }
+        createdAt: { type: string, format: date-time }
+      required: [id, type, amountDisplay, currency, amountEgp, state, createdAt]
+    ProgressUpdate:
+      type: object
+      properties:
+        id: { type: string }
+        stage: { type: string }
+        note: { type: string }
+        photoUrl: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+      required: [id, stage, note, photoUrl, createdAt]
+    ProgressInput:
+      type: object
+      properties:
+        stage: { type: string, minLength: 1 }
+        note: { type: string }
+        photoUrl: { type: ["string", "null"] }
+      required: [stage, note]
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        orderId: { type: string }
+        audience: { type: string, enum: [owner, buyer] }
+        message: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [id, orderId, audience, message, createdAt]
+    DesignInput:
+      type: object
+      properties:
+        imageUrl: { type: string, minLength: 1 }
+        note: { type: string }
+      required: [imageUrl, note]
+    DesignDecisionInput:
+      type: object
+      properties:
+        decision: { type: string, enum: [approve, request_changes] }
+        comment: { type: string }
+      required: [decision]
+    PaymentInput:
+      type: object
+      properties:
+        method: { type: string, enum: [card, wallet] }
+      required: [method]
+    OrderInput:
+      type: object
+      properties:
+        buyerName: { type: string, minLength: 1 }
+        buyerPhone: { type: string, minLength: 6 }
+        buyerCountry: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        dimensions: { type: string }
+      required: [buyerName, buyerPhone, buyerCountry, title, description, dimensions]
+    Order:
+      type: object
+      properties:
+        id: { type: string }
+        ownerId: { type: string }
+        ownerName: { type: string }
+        ownerPhone: { type: string }
+        workshopName: { type: string }
+        buyerName: { type: string }
+        buyerPhone: { type: string }
+        buyerCountry: { type: string }
+        title: { type: string }
+        description: { type: string }
+        dimensions: { type: string }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        magicToken: { type: string }
+        designApprovedAt: { type: ["string", "null"], format: date-time }
+        designChangeNote: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        images:
+          type: array
+          items: { $ref: "#/components/schemas/OrderImage" }
+        quote:
+          anyOf:
+            - $ref: "#/components/schemas/Quote"
+            - type: "null"
+        payments:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+        progress:
+          type: array
+          items: { $ref: "#/components/schemas/ProgressUpdate" }
+      required: [id, ownerId, ownerName, ownerPhone, workshopName, buyerName, buyerPhone, buyerCountry, title, description, dimensions, status, magicToken, designApprovedAt, designChangeNote, createdAt, images, payments, progress]
+    Dashboard:
+      type: object
+      properties:
+        openOrders: { type: integer }
+        depositsCollectedEgp: { type: number }
+        balancesDueEgp: { type: number }
+        orders:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        notifications:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+      required: [openOrders, depositsCollectedEgp, balancesDueEgp, orders, notifications]

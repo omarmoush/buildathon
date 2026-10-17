@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <rect width="960" height="640" fill="#e7e2d8"/>
+  <rect x="75" y="60" width="810" height="520" rx="28" fill="#f8f5ef"/>
+  <rect x="210" y="230" width="540" height="180" rx="18" fill="#9e7048"/>
+  <rect x="235" y="200" width="490" height="38" rx="12" fill="#c99a67"/>
+  <path d="M250 410v92m460-92v92" stroke="#69442e" stroke-width="20" stroke-linecap="round"/>
+  <circle cx="290" cy="330" r="18" fill="#ddc5a8"/><circle cx="670" cy="330" r="18" fill="#ddc5a8"/>
+  <text x="480" y="550" text-anchor="middle" font-family="Arial,sans-serif" font-size="26" fill="#624b3d">Dining room reference</text>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <rect width="960" height="640" fill="#e9e2d7"/>
+  <rect x="48" y="48" width="864" height="544" rx="24" fill="#c9b8a1"/>
+  <path d="M130 452 310 178l95 110 124-190 286 354H130Z" fill="#9c704a"/>
+  <path d="m310 178 95 110 124-190" fill="none" stroke="#d6aa7c" stroke-width="28"/>
+  <text x="480" y="545" text-anchor="middle" font-family="Arial,sans-serif" font-size="30" fill="#49372b">Material preparation</text>
+</svg>

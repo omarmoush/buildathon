@@ -1,0 +1,78 @@
+Build a working MVP web app called "Wasta" (placeholder name): a milestone-protected custom-order tool for small workshops in Egypt. Mobile-first, Arabic (RTL) and English with a language toggle, default Arabic.
+
+## Problem
+Workshop owners (example: Reda, a furniture maker in Damietta) lose money when buyers vanish after a piece is started, quotes go stale when the dollar moves, and distant buyers can't see progress so they phone daily. Buyers (often Egyptians in the Gulf) hesitate to pay a deposit to a workshop they've never met.
+
+## Two users
+1. Workshop owner: logs in, creates orders, builds quotes, posts progress photos, marks orders ready, sees a dashboard.
+2. Buyer: NO account. Opens a magic link (/b/:token) sent via WhatsApp and does everything from one page.
+
+## Order status machine
+draft -> design_review -> quoted -> deposit_paid -> in_production -> ready -> delivered -> closed
+Plus: cancelled, expired (quote not paid before expiry).
+Enforce valid transitions on the server. Show the current status as a stepper on both sides.
+
+## Data model
+- users: id, name, phone, role (owner), pin_hash, language
+- orders: id, owner_id, buyer_name, buyer_phone, buyer_country, title, description, dimensions, status, magic_token, created_at
+- order_images: id, order_id, url, kind (reference | design)
+- quotes: id, order_id, materials_cost_egp, labor_cost_egp, margin_percent, total_egp, display_currency (EGP|SAR|AED|USD), fx_rate_to_egp (locked at quote time), total_display, deposit_percent (default = materials share of total), deposit_amount_display, expires_at, approved_at
+- payments: id, order_id, type (deposit | balance), amount_display, currency, amount_egp, state (pending | held | released), created_at
+- progress_updates: id, order_id, stage (e.g. cut wood, assembly, finishing, ready), note, photo_url, created_at
+- notifications: id, order_id, audience (owner|buyer), message, created_at
+
+## Owner screens (login with phone + 4-digit PIN; seed one owner)
+1. Dashboard: counts of open orders, total deposits collected, balances due, list of orders with status chips.
+2. New order: buyer name, WhatsApp number, country, title, description, dimensions, upload reference photos.
+3. Order detail: status stepper, buyer link with a "Send via WhatsApp" button (wa.me deep link with the magic link and a prefilled Arabic message), timeline of updates, payments summary.
+4. Design step: owner uploads a design image (or sketch) for buyer review. If an OPENAI_API_KEY or similar secret exists, add a "Generate preview" button that creates an image from the description and reference photos; if not, hide that button. The manual upload must always work.
+5. Quote builder: materials cost, labor cost, margin %, choose buyer's display currency, fx rate (editable, prefilled from a small hardcoded table), expiry date. Show total in EGP and in the buyer's currency, and the deposit amount. Save as "locked" and move status to quoted.
+6. Post progress: pick stage, take or upload photo, short note, submit.
+7. Mark ready, then after buyer confirms, show the closed order.
+
+Owner UI: big buttons, minimal typing, large tap targets.
+
+## Buyer page (/b/:token), one page that changes by status
+- design_review: show design image, buttons "Approve" or "Request changes" (with a comment).
+- quoted: show line summary, total in their currency, the locked exchange rate and expiry date, deposit amount. Button "Pay deposit".
+- deposit_paid / in_production: progress timeline with photos, plus a protection badge: "Your deposit is held until delivery."
+- ready: "Confirm delivery received" button, which opens balance payment.
+- closed: thank-you and summary.
+Show the workshop name and owner's phone for trust.
+
+## Payments (SIMULATED, do not integrate a real gateway)
+Build a fake checkout modal with card or wallet options and a "Pay" button that always succeeds after a 1.5s delay. On deposit: create payment (type deposit) in state held, move order to deposit_paid. Owner posting the first progress update moves it to in_production. On delivery confirmation plus balance payment, release both payments (state released) and move order to closed. Make payment logic a separate module with a clear interface so a real provider (Paymob or Fawry) can replace it later.
+
+## Notifications (simulated)
+At each transition (order created, design uploaded, quote ready, deposit received, progress posted, ready, delivered, closed) write a notification row and show it in a small bell menu for the owner. For buyer-facing events show the wa.me link on the owner side so the demo can open WhatsApp with a prefilled message.
+
+## Seed data (important for the demo)
+- Owner: "Reda" , workshop "Reda Furniture, Damietta", PIN 1234.
+- Three orders at different stages:
+  1. "Bedroom set" for a buyer in Riyadh, status in_production, deposit held, 3 progress updates with placeholder photos.
+  2. "Dining table + 6 chairs" for a buyer in Cairo, status quoted, awaiting deposit.
+  3. "Wardrobe" for a buyer in Dubai, status ready, awaiting buyer confirmation.
+- Exchange-rate table (hardcoded, clearly labelled as demo rates).
+Use placeholder images from a free source or generated solid-color cards; do not rely on external image hosts that might break.
+
+## Tech
+- Single Replit project, TypeScript. React (Vite) + Tailwind frontend, Express backend, SQLite or Replit Postgres (whichever works out of the box), file uploads stored locally.
+- i18n with a simple dictionary and a language toggle; full RTL layout when Arabic.
+- Responsive; design for 390px width first. Clean, warm, trustworthy look (wood-tone accent, lots of whitespace).
+- Magic tokens must be long random strings.
+
+## Build order (stop and confirm each works before moving on)
+1. Schema, seed data, status machine with server-side validation.
+2. Owner login, dashboard, order list/detail.
+3. Quote builder with locked FX and deposit calculation.
+4. Buyer magic-link page across all statuses.
+5. Simulated payments and the full deposit -> progress -> delivery -> release flow.
+6. Progress updates with photo upload.
+7. Notifications and WhatsApp deep links.
+8. Arabic/RTL polish, then optional AI design preview.
+
+## Do NOT build
+Payroll, inventory, dead-stock marketplace, trucking, real payment integration, real WhatsApp API, user self-signup, admin panels.
+
+## Definition of done
+I can run this flow without errors: owner creates an order -> uploads a design -> buyer approves via magic link -> owner builds a quote in SAR -> buyer pays the deposit (simulated) -> owner posts two progress photos -> owner marks ready -> buyer confirms delivery and pays the balance -> payments show as released and the dashboard totals update. Works on a phone in both Arabic and English.
