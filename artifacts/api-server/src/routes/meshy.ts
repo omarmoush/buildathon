@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { Router, type IRouter } from "express";
 import { catalogItems } from "./catalog";
 
@@ -108,13 +106,16 @@ router.get("/meshy/:taskId/asset/:format", async (req, res) => {
     const task = await getTask(entry);
     const target = format === "thumbnail" ? task.thumbnail_url : task.model_urls?.[format as "glb" | "usdz"];
     if (!target || !isAllowedAsset(target)) { res.sendStatus(404); return; }
-    const upstream = await fetch(target, { redirect: "error", signal: AbortSignal.timeout(60_000) });
-    if (!upstream.ok || !upstream.body) { res.sendStatus(502); return; }
+    // Never follow redirects off the allowlisted host. Cloudflare Workers reject redirect: "error",
+    // so use "manual": a redirect comes back as a 3xx and fails the ok check below.
+    const upstream = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(60_000) });
+    if (!upstream.ok) { res.sendStatus(502); return; }
     res.set({
       "Content-Type": format === "glb" ? "model/gltf-binary" : format === "usdz" ? "model/vnd.usdz+zip" : "image/png",
       "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff",
     });
-    await pipeline(Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]), res);
+    // Buffered like the Worker's R2 upload handler; Node stream piping is not reliable behind httpServerHandler.
+    res.send(Buffer.from(await upstream.arrayBuffer()));
   } catch {
     if (!res.headersSent) res.status(502).json({ error: "Model unavailable; select a fallback" });
     else res.destroy();
